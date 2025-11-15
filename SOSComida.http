@@ -1,0 +1,6 @@
+@SOSComida_HostAddress = http://localhost:5118
+
+GET {{SOSComida_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
