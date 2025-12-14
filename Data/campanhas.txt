@@ -1,0 +1,3 @@
+1|Alimentos para Famílias Carentes|Campanha para arrecadar alimentos não perecíveis para famílias em situação de vulnerabilidade social.|https://images.unsplash.com/photo-1593113598332-cd288d649433?w=800|São Paulo, SP|50000|35000|2025-01-01|2025-03-31|Ativa|true|1
+2|Cesta Básica para Idosos|Distribuição de cestas básicas mensais para idosos de baixa renda.|https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800|Rio de Janeiro, RJ|30000|18000|2025-01-15|2025-04-15|Ativa|true|1
+3|Sopa Solidária - Inverno 2025|Preparo e distribuição de sopas nutritivas durante o período de inverno.|https://images.unsplash.com/photo-1547592166-23ac45744acd?w=800|Curitiba, PR|40000|28000|2025-02-01|2025-08-31|Ativa|true|1
