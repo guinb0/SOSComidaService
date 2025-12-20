@@ -8,4 +8,5 @@ public class LoginResponse
     public string? RefreshToken { get; set; }
     public Usuario Usuario { get; set; } = null!;
     public bool? Requires2FA { get; set; }
+    public bool SenhaTemporaria { get; set; } = false;
 }

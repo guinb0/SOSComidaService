@@ -17,10 +17,104 @@ namespace SOSComida.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.0")
+                .HasAnnotation("ProductVersion", "9.0.1")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.Entity("SOSComida.Models.AcaoModeracao", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("DataAcao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ModeradorId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Motivo")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Observacoes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("TipoAcao")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("TipoItem")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ModeradorId");
+
+                    b.ToTable("tb_acoes_moderacao", (string)null);
+                });
+
+            modelBuilder.Entity("SOSComida.Models.AvisoCampanha", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CampanhaId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("DataEnvio")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DataLeitura")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("DestinatarioId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Lido")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Mensagem")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int>("ModeradorId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Titulo")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CampanhaId");
+
+                    b.HasIndex("DestinatarioId");
+
+                    b.HasIndex("ModeradorId");
+
+                    b.ToTable("tb_avisos_campanha", (string)null);
+                });
 
             modelBuilder.Entity("SOSComida.Models.Campanha", b =>
                 {
@@ -58,8 +152,8 @@ namespace SOSComida.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<decimal>("MetaArrecadacao")
-                        .HasColumnType("decimal(18,2)");
+                    b.Property<double>("MetaArrecadacao")
+                        .HasColumnType("double precision");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -74,14 +168,275 @@ namespace SOSComida.Migrations
                     b.Property<int>("UsuarioId")
                         .HasColumnType("integer");
 
-                    b.Property<decimal>("ValorArrecadado")
-                        .HasColumnType("decimal(18,2)");
+                    b.Property<double>("ValorArrecadado")
+                        .HasColumnType("double precision");
 
                     b.HasKey("Id");
 
                     b.HasIndex("UsuarioId");
 
                     b.ToTable("tb_campanhas", (string)null);
+                });
+
+            modelBuilder.Entity("SOSComida.Models.Denuncia", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("DataAnalise")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DenunciadoId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Descricao")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int?>("ModeradorId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Motivo")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ParecerModerador")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("TipoDenunciado")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ModeradorId");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.ToTable("tb_denuncias", (string)null);
+                });
+
+            modelBuilder.Entity("SOSComida.Models.Doacao", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CampanhaId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ComprovanteUrl")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DataConfirmacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DataDoacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Descricao")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("Valor")
+                        .HasColumnType("double precision");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CampanhaId");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.ToTable("tb_doacoes", (string)null);
+                });
+
+            modelBuilder.Entity("SOSComida.Models.MensagemChat", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CampanhaId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Conteudo")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime?>("DataEdicao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DataEnvio")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Deletada")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("Fixada")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("FixadaPorId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CampanhaId");
+
+                    b.HasIndex("FixadaPorId");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.ToTable("tb_mensagens_chat", (string)null);
+                });
+
+            modelBuilder.Entity("SOSComida.Models.ParticipanteCampanha", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CampanhaId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("DataEntrada")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DataSaida")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MotivoSaida")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int?>("RemovidoPorId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RemovidoPorId");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("CampanhaId", "UsuarioId")
+                        .IsUnique();
+
+                    b.ToTable("tb_participantes_campanha", (string)null);
+                });
+
+            modelBuilder.Entity("SOSComida.Models.PedidoAjuda", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CampanhaId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("DataAtendimento")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DataAtualizacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Descricao")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("Localizacao")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Observacoes")
+                        .HasColumnType("text");
+
+                    b.Property<int>("QuantidadePessoas")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Titulo")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Urgencia")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CampanhaId");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.ToTable("tb_pedidos_ajuda", (string)null);
                 });
 
             modelBuilder.Entity("SOSComida.Models.Usuario", b =>
@@ -98,6 +453,9 @@ namespace SOSComida.Migrations
 
                     b.Property<string>("Cpf")
                         .HasColumnType("text");
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Email")
                         .IsRequired()
@@ -117,6 +475,9 @@ namespace SOSComida.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("SenhaTemporaria")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Telefone")
                         .IsRequired()
                         .HasColumnType("text");
@@ -133,6 +494,43 @@ namespace SOSComida.Migrations
                     b.ToTable("tb_usuarios", (string)null);
                 });
 
+            modelBuilder.Entity("SOSComida.Models.AcaoModeracao", b =>
+                {
+                    b.HasOne("SOSComida.Models.Usuario", "Moderador")
+                        .WithMany()
+                        .HasForeignKey("ModeradorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Moderador");
+                });
+
+            modelBuilder.Entity("SOSComida.Models.AvisoCampanha", b =>
+                {
+                    b.HasOne("SOSComida.Models.Campanha", "Campanha")
+                        .WithMany()
+                        .HasForeignKey("CampanhaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SOSComida.Models.Usuario", "Destinatario")
+                        .WithMany()
+                        .HasForeignKey("DestinatarioId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SOSComida.Models.Usuario", "Moderador")
+                        .WithMany()
+                        .HasForeignKey("ModeradorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Campanha");
+
+                    b.Navigation("Destinatario");
+
+                    b.Navigation("Moderador");
+                });
+
             modelBuilder.Entity("SOSComida.Models.Campanha", b =>
                 {
                     b.HasOne("SOSComida.Models.Usuario", "Usuario")
@@ -140,6 +538,113 @@ namespace SOSComida.Migrations
                         .HasForeignKey("UsuarioId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("SOSComida.Models.Denuncia", b =>
+                {
+                    b.HasOne("SOSComida.Models.Usuario", "Moderador")
+                        .WithMany()
+                        .HasForeignKey("ModeradorId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SOSComida.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Moderador");
+
+                    b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("SOSComida.Models.Doacao", b =>
+                {
+                    b.HasOne("SOSComida.Models.Campanha", "Campanha")
+                        .WithMany()
+                        .HasForeignKey("CampanhaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SOSComida.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Campanha");
+
+                    b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("SOSComida.Models.MensagemChat", b =>
+                {
+                    b.HasOne("SOSComida.Models.Campanha", "Campanha")
+                        .WithMany()
+                        .HasForeignKey("CampanhaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SOSComida.Models.Usuario", "FixadaPor")
+                        .WithMany()
+                        .HasForeignKey("FixadaPorId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SOSComida.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Campanha");
+
+                    b.Navigation("FixadaPor");
+
+                    b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("SOSComida.Models.ParticipanteCampanha", b =>
+                {
+                    b.HasOne("SOSComida.Models.Campanha", "Campanha")
+                        .WithMany()
+                        .HasForeignKey("CampanhaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SOSComida.Models.Usuario", "RemovidoPor")
+                        .WithMany()
+                        .HasForeignKey("RemovidoPorId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SOSComida.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Campanha");
+
+                    b.Navigation("RemovidoPor");
+
+                    b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("SOSComida.Models.PedidoAjuda", b =>
+                {
+                    b.HasOne("SOSComida.Models.Campanha", "Campanha")
+                        .WithMany()
+                        .HasForeignKey("CampanhaId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SOSComida.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Campanha");
 
                     b.Navigation("Usuario");
                 });

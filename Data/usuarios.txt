@@ -1,1 +1,5 @@
-1|guinb@soscomida.com|123|Guilherme Nobrega
+1|guinb@soscomida.com|123|Guilherme Nunes|11999999999|Rua Exemplo, 123|São Paulo|12345678900|moderador|False
+2|maria@email.com|abc123|Maria Silva|11988888888|Av. Brasil, 456|Rio de Janeiro|98765432100|usuario|False
+3|joao@email.com|senha123|João Santos|21977777777|Rua das Flores, 789|Belo Horizonte|11122233344|usuario|False
+4|ana@instituicao.org|inst456|Ana Costa|31966666666|Av. Central, 100|Curitiba|55566677788|instituicao|False
+5|guilhermenunesfev26@gmail.com|ZumHc7nH|Guilherme Nunes Bezerra|61995462222|Rua Brasil, 26|Aguas claras||usuario|True
