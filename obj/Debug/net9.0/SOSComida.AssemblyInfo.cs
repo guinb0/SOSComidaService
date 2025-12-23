@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SOSComida")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+64718a7307fe65021e98e7b5d177a931eca5da58")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+86d68ffddaf33d80e74dcda8cbe9ce435aa06214")]
 [assembly: System.Reflection.AssemblyProductAttribute("SOSComida")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SOSComida")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

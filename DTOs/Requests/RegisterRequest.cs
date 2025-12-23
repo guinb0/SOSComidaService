@@ -10,4 +10,10 @@ public class RegisterRequest
     public string Cidade { get; set; } = string.Empty;
     public string? Cpf { get; set; }
     public string Tipo { get; set; } = "usuario"; // usuario ou instituicao
+    
+    // Campos específicos para instituições
+    public string? Cnpj { get; set; }
+    public int? RegiaoAdministrativaId { get; set; }
+    public string? NomeInstituicao { get; set; }
+    public string? DescricaoInstituicao { get; set; }
 }

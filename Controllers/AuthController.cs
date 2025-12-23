@@ -60,40 +60,75 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Este email já está cadastrado" });
         }
 
-        // Gerar senha temporária
-        var senhaTemporaria = GerarSenhaTemporaria();
+        // Validar senha
+        if (string.IsNullOrEmpty(request.Senha) || request.Senha.Length < 6)
+        {
+            return BadRequest(new { message = "A senha deve ter pelo menos 6 caracteres" });
+        }
 
-        // Criar novo usuário
+        // Validações específicas para instituições
+        var isInstituicao = request.Tipo == "instituicao";
+        if (isInstituicao)
+        {
+            if (!request.RegiaoAdministrativaId.HasValue)
+            {
+                return BadRequest(new { message = "Instituições devem selecionar uma região administrativa" });
+            }
+            
+            // Verificar se a região existe
+            var regiaoExiste = await _context.RegioesAdministrativas
+                .AnyAsync(r => r.Id == request.RegiaoAdministrativaId && r.Ativa);
+            if (!regiaoExiste)
+            {
+                return BadRequest(new { message = "Região administrativa inválida" });
+            }
+
+            if (string.IsNullOrEmpty(request.NomeInstituicao))
+            {
+                return BadRequest(new { message = "O nome da instituição é obrigatório" });
+            }
+        }
+
+        // Criar novo usuário com a senha fornecida
         var novoUsuario = new Usuario
         {
             Nome = request.Nome,
             Email = request.Email,
-            Senha = senhaTemporaria,
+            Senha = request.Senha,
             Telefone = request.Telefone ?? "",
             Endereco = request.Endereco ?? "",
             Cidade = request.Cidade ?? "",
-            Cpf = request.Cpf,
-            Tipo = "usuario",
-            SenhaTemporaria = true,
-            DataCriacao = DateTime.UtcNow
+            Cpf = isInstituicao ? null : request.Cpf, // CPF apenas para pessoas físicas
+            Tipo = isInstituicao ? "instituicao" : "usuario",
+            SenhaTemporaria = false,
+            DataCriacao = DateTime.UtcNow,
+            // Campos de instituição
+            Cnpj = isInstituicao ? request.Cnpj : null,
+            RegiaoAdministrativaId = isInstituicao ? request.RegiaoAdministrativaId : null,
+            NomeInstituicao = isInstituicao ? request.NomeInstituicao : null,
+            DescricaoInstituicao = isInstituicao ? request.DescricaoInstituicao : null,
+            StatusAprovacao = isInstituicao ? "pendente" : "nao_aplicavel"
         };
 
         _context.Usuarios.Add(novoUsuario);
         await _context.SaveChangesAsync();
 
-        // Enviar email com senha temporária
-        await _emailService.EnviarEmailBoasVindas(request.Email, request.Nome, senhaTemporaria);
+        var mensagem = isInstituicao 
+            ? "Cadastro realizado! Sua instituição será analisada pelos moderadores. Recomendamos usar um email corporativo para facilitar a validação."
+            : "Usuário criado com sucesso! Você já pode fazer login.";
 
         return Ok(new { 
-            message = "Usuário criado com sucesso! Uma senha temporária foi enviada para o seu email.",
+            message = mensagem,
             email = request.Email,
             usuario = new
             {
                 id = novoUsuario.Id,
                 nome = novoUsuario.Nome,
                 email = novoUsuario.Email,
-                tipo = novoUsuario.Tipo
-            }
+                tipo = novoUsuario.Tipo,
+                statusAprovacao = novoUsuario.StatusAprovacao
+            },
+            aguardandoAprovacao = isInstituicao
         });
     }
 
@@ -137,4 +172,113 @@ public class AuthController : ControllerBase
 
         return Ok(new { message = "Se o email estiver cadastrado, uma nova senha será enviada." });
     }
+
+    [HttpPut("perfil/{id}")]
+    public async Task<IActionResult> AtualizarPerfil(int id, [FromBody] AtualizarPerfilRequest request)
+    {
+        var usuario = await _context.Usuarios.FindAsync(id);
+        if (usuario == null)
+        {
+            return NotFound(new { message = "Usuário não encontrado" });
+        }
+
+        if (!string.IsNullOrEmpty(request.Nome)) usuario.Nome = request.Nome;
+        if (!string.IsNullOrEmpty(request.Telefone)) usuario.Telefone = request.Telefone;
+        if (!string.IsNullOrEmpty(request.Cidade)) usuario.Cidade = request.Cidade;
+        if (!string.IsNullOrEmpty(request.Endereco)) usuario.Endereco = request.Endereco;
+
+        await _context.SaveChangesAsync();
+        return Ok(usuario);
+    }
+
+    [HttpPost("perfil/{id}/foto")]
+    public async Task<IActionResult> UploadFoto(int id, IFormFile foto)
+    {
+        var usuario = await _context.Usuarios.FindAsync(id);
+        if (usuario == null)
+        {
+            return NotFound(new { message = "Usuário não encontrado" });
+        }
+
+        if (foto == null || foto.Length == 0)
+        {
+            return BadRequest(new { message = "Nenhuma imagem enviada" });
+        }
+
+        // Validar tipo de arquivo
+        var allowedTypes = new[] { "image/jpeg", "image/png", "image/gif", "image/webp" };
+        if (!allowedTypes.Contains(foto.ContentType.ToLower()))
+        {
+            return BadRequest(new { message = "Tipo de arquivo não permitido. Use JPG, PNG, GIF ou WebP." });
+        }
+
+        // Validar tamanho (máx 5MB)
+        if (foto.Length > 5 * 1024 * 1024)
+        {
+            return BadRequest(new { message = "A imagem deve ter no máximo 5MB" });
+        }
+
+        // Criar pasta de uploads se não existir
+        var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "fotos");
+        Directory.CreateDirectory(uploadsFolder);
+
+        // Gerar nome único para o arquivo
+        var extension = Path.GetExtension(foto.FileName);
+        var fileName = $"{id}_{Guid.NewGuid()}{extension}";
+        var filePath = Path.Combine(uploadsFolder, fileName);
+
+        // Deletar foto anterior se existir
+        if (!string.IsNullOrEmpty(usuario.FotoUrl))
+        {
+            var oldPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", usuario.FotoUrl.TrimStart('/'));
+            if (System.IO.File.Exists(oldPath))
+            {
+                System.IO.File.Delete(oldPath);
+            }
+        }
+
+        // Salvar nova foto
+        using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await foto.CopyToAsync(stream);
+        }
+
+        // Atualizar URL no banco
+        usuario.FotoUrl = $"/uploads/fotos/{fileName}";
+        await _context.SaveChangesAsync();
+
+        return Ok(new { fotoUrl = usuario.FotoUrl, message = "Foto atualizada com sucesso!" });
+    }
+
+    [HttpDelete("perfil/{id}/foto")]
+    public async Task<IActionResult> RemoverFoto(int id)
+    {
+        var usuario = await _context.Usuarios.FindAsync(id);
+        if (usuario == null)
+        {
+            return NotFound(new { message = "Usuário não encontrado" });
+        }
+
+        if (!string.IsNullOrEmpty(usuario.FotoUrl))
+        {
+            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", usuario.FotoUrl.TrimStart('/'));
+            if (System.IO.File.Exists(filePath))
+            {
+                System.IO.File.Delete(filePath);
+            }
+        }
+
+        usuario.FotoUrl = null;
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Foto removida com sucesso!" });
+    }
+}
+
+public class AtualizarPerfilRequest
+{
+    public string? Nome { get; set; }
+    public string? Telefone { get; set; }
+    public string? Cidade { get; set; }
+    public string? Endereco { get; set; }
 }

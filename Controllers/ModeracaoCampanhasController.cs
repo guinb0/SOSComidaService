@@ -6,7 +6,7 @@ using SOSComida.Models;
 namespace SOSComida.Controllers;
 
 [ApiController]
-[Route("api/campanhas")]
+[Route("api/moderacao/campanhas")]
 public class ModeracaoCampanhasController : ControllerBase
 {
     private readonly string _participantesPath;

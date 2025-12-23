@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SOSComida.Data;
 using SOSComida.Services;
 using SOSComida.DTOs.Requests;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,7 +19,13 @@ builder.Services.AddSingleton(emailSettings);
 // Usar FakeEmailService para desenvolvimento (simula envio de email)
 builder.Services.AddScoped<IEmailService, FakeEmailService>();
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // Aceitar propriedades JSON case-insensitive (camelCase do JS para PascalCase do C#)
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+    });
 // Configuração do Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -42,6 +49,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// Servir arquivos estáticos (fotos de perfil, etc.)
+app.UseStaticFiles();
 
 // Aplicar política de CORS
 app.UseCors("AllowFrontend");

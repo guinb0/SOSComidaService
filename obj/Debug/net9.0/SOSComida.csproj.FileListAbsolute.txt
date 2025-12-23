@@ -166,3 +166,4 @@ C:\Users\User\Documents\GitlabProjects\Personal_Projects\SOSComida\SOSComidaServ
 C:\Users\User\Documents\GitlabProjects\Personal_Projects\SOSComida\SOSComidaService\bin\Debug\net9.0\Microsoft.Extensions.Primitives.dll
 C:\Users\User\Documents\GitlabProjects\Personal_Projects\SOSComida\SOSComidaService\bin\Debug\net9.0\Npgsql.dll
 C:\Users\User\Documents\GitlabProjects\Personal_Projects\SOSComida\SOSComidaService\bin\Debug\net9.0\Npgsql.EntityFrameworkCore.PostgreSQL.dll
+C:\Users\User\Documents\GitlabProjects\Personal_Projects\SOSComida\SOSComidaService\bin\Debug\net9.0\SOSComida.staticwebassets.runtime.json

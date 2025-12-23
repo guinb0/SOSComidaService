@@ -6,6 +6,7 @@ public class CampanhaDto
     public string Titulo { get; set; } = string.Empty;
     public string Descricao { get; set; } = string.Empty;
     public string? ImagemUrl { get; set; }
+    public List<string>? Imagens { get; set; } // Lista de URLs das fotos
     public string Localizacao { get; set; } = string.Empty;
     public decimal MetaArrecadacao { get; set; }
     public decimal ValorArrecadado { get; set; }
@@ -19,4 +20,8 @@ public class CampanhaDto
     public decimal PercentualArrecadado => MetaArrecadacao > 0 
         ? (ValorArrecadado / MetaArrecadacao) * 100 
         : 0;
+    
+    // Região administrativa
+    public int? RegiaoId { get; set; }
+    public string? RegiaoNome { get; set; }
 }

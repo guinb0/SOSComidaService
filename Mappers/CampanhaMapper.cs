@@ -1,6 +1,7 @@
 using SOSComida.Models;
 using SOSComida.DTOs.Requests;
 using SOSComida.DTOs.Responses;
+using System.Text.Json;
 
 namespace SOSComida.Mappers;
 
@@ -8,12 +9,23 @@ public static class CampanhaMapper
 {
     public static CampanhaDto ToDto(this Campanha campanha)
     {
+        List<string>? imagens = null;
+        if (!string.IsNullOrEmpty(campanha.Imagens))
+        {
+            try
+            {
+                imagens = JsonSerializer.Deserialize<List<string>>(campanha.Imagens);
+            }
+            catch { }
+        }
+
         return new CampanhaDto
         {
             Id = campanha.Id,
             Titulo = campanha.Titulo,
             Descricao = campanha.Descricao,
             ImagemUrl = campanha.ImagemUrl,
+            Imagens = imagens,
             Localizacao = campanha.Localizacao,
             MetaArrecadacao = campanha.MetaArrecadacao,
             ValorArrecadado = campanha.ValorArrecadado,
@@ -31,11 +43,18 @@ public static class CampanhaMapper
 
     public static Campanha ToEntity(this CreateCampanhaDto dto, int usuarioId)
     {
+        string? imagensJson = null;
+        if (dto.Imagens != null && dto.Imagens.Count > 0)
+        {
+            imagensJson = JsonSerializer.Serialize(dto.Imagens);
+        }
+
         return new Campanha
         {
             Titulo = dto.Titulo,
             Descricao = dto.Descricao,
-            ImagemUrl = dto.ImagemUrl,
+            ImagemUrl = dto.ImagemUrl ?? (dto.Imagens?.FirstOrDefault()),
+            Imagens = imagensJson,
             Localizacao = dto.Localizacao ?? string.Empty,
             MetaArrecadacao = dto.MetaArrecadacao,
             DataInicio = dto.DataInicio,

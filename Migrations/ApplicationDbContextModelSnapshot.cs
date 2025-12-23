@@ -133,6 +133,9 @@ namespace SOSComida.Migrations
                     b.Property<DateTime>("DataCriacao")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("DataDelegacao")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("DataFim")
                         .HasColumnType("timestamp with time zone");
 
@@ -147,6 +150,12 @@ namespace SOSComida.Migrations
                     b.Property<string>("ImagemUrl")
                         .HasColumnType("text");
 
+                    b.Property<string>("Imagens")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("InstituicaoId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Localizacao")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -155,8 +164,15 @@ namespace SOSComida.Migrations
                     b.Property<double>("MetaArrecadacao")
                         .HasColumnType("double precision");
 
+                    b.Property<int?>("RegiaoId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Status")
                         .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("StatusDelegacao")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
@@ -165,13 +181,17 @@ namespace SOSComida.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
 
-                    b.Property<int>("UsuarioId")
+                    b.Property<int?>("UsuarioId")
                         .HasColumnType("integer");
 
                     b.Property<double>("ValorArrecadado")
                         .HasColumnType("double precision");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("InstituicaoId");
+
+                    b.HasIndex("RegiaoId");
 
                     b.HasIndex("UsuarioId");
 
@@ -327,6 +347,84 @@ namespace SOSComida.Migrations
                     b.ToTable("tb_mensagens_chat", (string)null);
                 });
 
+            modelBuilder.Entity("SOSComida.Models.ModeradorRegiao", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Ativo")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("DataAtribuicao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ModeradorId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RegiaoId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RegiaoId");
+
+                    b.HasIndex("ModeradorId", "RegiaoId")
+                        .IsUnique();
+
+                    b.ToTable("tb_moderador_regioes", (string)null);
+                });
+
+            modelBuilder.Entity("SOSComida.Models.Notificacao", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CampanhaId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Lida")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Mensagem")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("StatusDelegacao")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Titulo")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CampanhaId");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.ToTable("tb_notificacoes", (string)null);
+                });
+
             modelBuilder.Entity("SOSComida.Models.ParticipanteCampanha", b =>
                 {
                     b.Property<int>("Id")
@@ -384,6 +482,9 @@ namespace SOSComida.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("AtendidoPorId")
+                        .HasColumnType("integer");
+
                     b.Property<int?>("CampanhaId")
                         .HasColumnType("integer");
 
@@ -412,8 +513,19 @@ namespace SOSComida.Migrations
                     b.Property<int>("QuantidadePessoas")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("RegiaoId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Status")
                         .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Telefone")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("TipoAjuda")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
@@ -432,11 +544,55 @@ namespace SOSComida.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AtendidoPorId");
+
                     b.HasIndex("CampanhaId");
+
+                    b.HasIndex("RegiaoId");
 
                     b.HasIndex("UsuarioId");
 
                     b.ToTable("tb_pedidos_ajuda", (string)null);
+                });
+
+            modelBuilder.Entity("SOSComida.Models.RegiaoAdministrativa", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Ativa")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Cidade")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Estado")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Sigla")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Sigla")
+                        .IsUnique();
+
+                    b.ToTable("tb_regioes_administrativas", (string)null);
                 });
 
             modelBuilder.Entity("SOSComida.Models.Usuario", b =>
@@ -447,15 +603,29 @@ namespace SOSComida.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("AprovadoPorId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Cidade")
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Cnpj")
+                        .HasMaxLength(18)
+                        .HasColumnType("character varying(18)");
+
                     b.Property<string>("Cpf")
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("DataAprovacao")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("DataCriacao")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DescricaoInstituicao")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<string>("Email")
                         .IsRequired()
@@ -466,10 +636,24 @@ namespace SOSComida.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("FotoUrl")
+                        .HasColumnType("text");
+
+                    b.Property<string>("MotivoRejeicao")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
                     b.Property<string>("Nome")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<string>("NomeInstituicao")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int?>("RegiaoAdministrativaId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Senha")
                         .IsRequired()
@@ -477,6 +661,11 @@ namespace SOSComida.Migrations
 
                     b.Property<bool>("SenhaTemporaria")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("StatusAprovacao")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
 
                     b.Property<string>("Telefone")
                         .IsRequired()
@@ -488,8 +677,12 @@ namespace SOSComida.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AprovadoPorId");
+
                     b.HasIndex("Email")
                         .IsUnique();
+
+                    b.HasIndex("RegiaoAdministrativaId");
 
                     b.ToTable("tb_usuarios", (string)null);
                 });
@@ -533,11 +726,24 @@ namespace SOSComida.Migrations
 
             modelBuilder.Entity("SOSComida.Models.Campanha", b =>
                 {
+                    b.HasOne("SOSComida.Models.Usuario", "Instituicao")
+                        .WithMany()
+                        .HasForeignKey("InstituicaoId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SOSComida.Models.RegiaoAdministrativa", "Regiao")
+                        .WithMany()
+                        .HasForeignKey("RegiaoId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("SOSComida.Models.Usuario", "Usuario")
                         .WithMany()
                         .HasForeignKey("UsuarioId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Instituicao");
+
+                    b.Navigation("Regiao");
 
                     b.Navigation("Usuario");
                 });
@@ -605,6 +811,43 @@ namespace SOSComida.Migrations
                     b.Navigation("Usuario");
                 });
 
+            modelBuilder.Entity("SOSComida.Models.ModeradorRegiao", b =>
+                {
+                    b.HasOne("SOSComida.Models.Usuario", "Moderador")
+                        .WithMany()
+                        .HasForeignKey("ModeradorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SOSComida.Models.RegiaoAdministrativa", "Regiao")
+                        .WithMany("ModeradorRegioes")
+                        .HasForeignKey("RegiaoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Moderador");
+
+                    b.Navigation("Regiao");
+                });
+
+            modelBuilder.Entity("SOSComida.Models.Notificacao", b =>
+                {
+                    b.HasOne("SOSComida.Models.Campanha", "Campanha")
+                        .WithMany()
+                        .HasForeignKey("CampanhaId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SOSComida.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Campanha");
+
+                    b.Navigation("Usuario");
+                });
+
             modelBuilder.Entity("SOSComida.Models.ParticipanteCampanha", b =>
                 {
                     b.HasOne("SOSComida.Models.Campanha", "Campanha")
@@ -633,9 +876,19 @@ namespace SOSComida.Migrations
 
             modelBuilder.Entity("SOSComida.Models.PedidoAjuda", b =>
                 {
+                    b.HasOne("SOSComida.Models.Usuario", "AtendidoPor")
+                        .WithMany()
+                        .HasForeignKey("AtendidoPorId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("SOSComida.Models.Campanha", "Campanha")
                         .WithMany()
                         .HasForeignKey("CampanhaId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SOSComida.Models.RegiaoAdministrativa", "Regiao")
+                        .WithMany()
+                        .HasForeignKey("RegiaoId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("SOSComida.Models.Usuario", "Usuario")
@@ -644,9 +897,35 @@ namespace SOSComida.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("AtendidoPor");
+
                     b.Navigation("Campanha");
 
+                    b.Navigation("Regiao");
+
                     b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("SOSComida.Models.Usuario", b =>
+                {
+                    b.HasOne("SOSComida.Models.Usuario", "AprovadoPor")
+                        .WithMany()
+                        .HasForeignKey("AprovadoPorId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SOSComida.Models.RegiaoAdministrativa", "RegiaoAdministrativa")
+                        .WithMany()
+                        .HasForeignKey("RegiaoAdministrativaId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("AprovadoPor");
+
+                    b.Navigation("RegiaoAdministrativa");
+                });
+
+            modelBuilder.Entity("SOSComida.Models.RegiaoAdministrativa", b =>
+                {
+                    b.Navigation("ModeradorRegioes");
                 });
 #pragma warning restore 612, 618
         }

@@ -10,7 +10,9 @@ public class PedidoAjuda
     public string Status { get; set; } = "pendente"; // pendente, em_andamento, atendido, cancelado
     public int QuantidadePessoas { get; set; } = 1;
     public string? Observacoes { get; set; }
-    public DateTime DataCriacao { get; set; } = DateTime.Now;
+    public string? Telefone { get; set; }
+    public string? TipoAjuda { get; set; } // alimentos, higiene, roupas, medicamentos, outros
+    public DateTime DataCriacao { get; set; } = DateTime.UtcNow;
     public DateTime? DataAtualizacao { get; set; }
     public DateTime? DataAtendimento { get; set; }
 
@@ -21,4 +23,12 @@ public class PedidoAjuda
     // Campanha que atendeu (opcional)
     public int? CampanhaId { get; set; }
     public Campanha? Campanha { get; set; }
+    
+    // Região administrativa
+    public int? RegiaoId { get; set; }
+    public RegiaoAdministrativa? Regiao { get; set; }
+    
+    // Usuário que atendeu
+    public int? AtendidoPorId { get; set; }
+    public Usuario? AtendidoPor { get; set; }
 }
