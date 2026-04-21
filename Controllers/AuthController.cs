@@ -167,8 +167,8 @@ public class AuthController : ControllerBase
         usuario.SenhaTemporaria = true;
         await _context.SaveChangesAsync();
 
-        // Enviar email
-        await _emailService.EnviarEmailBoasVindas(usuario.Email, usuario.Nome, novaSenha);
+        // Enviar email de recuperação de senha
+        await _emailService.EnviarEmailRecuperacaoSenha(usuario.Email, usuario.Nome, novaSenha);
 
         return Ok(new { message = "Se o email estiver cadastrado, uma nova senha será enviada." });
     }

@@ -6,18 +6,46 @@ using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
+if (builder.Environment.IsDevelopment())
+{
+    builder.Configuration.AddJsonFile(
+        Path.Combine(builder.Environment.ContentRootPath, "appsettings.Development.local.json"),
+        optional: true,
+        reloadOnChange: true);
+}
+
 // Add services to the container.
 
-// Configuração do Entity Framework com PostgreSQL
+// PostgreSQL (local ou Supabase). Senha: appsettings.Development.local.json (gitignored), User Secrets ou env ConnectionStrings__DefaultConnection.
+// Ex.: dotnet user-secrets set ConnectionStrings:DefaultConnection "Host=db.oxrxcrksnxyjzqbffoiv.supabase.co;Port=5432;Database=postgres;Username=postgres;Password=...;SSL Mode=Require;Trust Server Certificate=true"
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException(
+        "Defina ConnectionStrings:DefaultConnection (appsettings, variável de ambiente ou User Secrets).");
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(connectionString, npgsql =>
+    {
+        npgsql.EnableRetryOnFailure(5, TimeSpan.FromSeconds(10), null);
+    }));
 
 // Configuração do serviço de Email
 var emailSettings = builder.Configuration.GetSection("EmailSettings").Get<EmailSettings>() ?? new EmailSettings();
 builder.Services.AddSingleton(emailSettings);
 
-// Usar FakeEmailService para desenvolvimento (simula envio de email)
-builder.Services.AddScoped<IEmailService, FakeEmailService>();
+var resendConfigurado = !string.IsNullOrWhiteSpace(emailSettings.ResendApiKey) &&
+                        !string.IsNullOrWhiteSpace(emailSettings.SenderEmail);
+var smtpConfigurado = !string.IsNullOrWhiteSpace(emailSettings.SenderEmail) &&
+                      !string.IsNullOrWhiteSpace(emailSettings.SenderPassword);
+
+if (resendConfigurado || smtpConfigurado)
+{
+    builder.Services.AddScoped<IEmailService, EmailService>();
+}
+else
+{
+    // Fallback para desenvolvimento/local quando senha de app do SMTP ainda não foi configurada.
+    builder.Services.AddScoped<IEmailService, FakeEmailService>();
+}
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>

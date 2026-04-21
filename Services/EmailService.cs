@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Mail;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using SOSComida.DTOs.Requests;
 
 namespace SOSComida.Services;
@@ -7,11 +9,13 @@ namespace SOSComida.Services;
 public interface IEmailService
 {
     Task<bool> EnviarEmailBoasVindas(string email, string nome, string senhaTemporaria);
+    Task<bool> EnviarEmailRecuperacaoSenha(string email, string nome, string senhaTemporaria);
     Task<bool> EnviarEmail(string destinatario, string assunto, string corpo);
 }
 
 public class EmailService : IEmailService
 {
+    private static readonly HttpClient HttpClient = new();
     private readonly EmailSettings _emailSettings;
     private readonly ILogger<EmailService> _logger;
 
@@ -104,13 +108,60 @@ public class EmailService : IEmailService
         return await EnviarEmail(email, assunto, corpo);
     }
 
+    public async Task<bool> EnviarEmailRecuperacaoSenha(string email, string nome, string senhaTemporaria)
+    {
+        var assunto = "🔐 SOS Comida - Recuperação de senha";
+
+        var corpo = $@"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='UTF-8'>
+    <style>
+        body {{ font-family: Arial, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; }}
+        .container {{ max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border-radius: 16px; padding: 32px; border: 1px solid #475569; }}
+        .card {{ background-color: #1e293b; border-radius: 12px; padding: 24px; margin: 20px 0; border: 1px solid #475569; }}
+        .senha {{ color: #ffffff; font-size: 20px; font-weight: bold; font-family: monospace; background-color: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 6px; display: inline-block; }}
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <h2>Olá, {nome}!</h2>
+        <p>Recebemos uma solicitação de recuperação de senha para sua conta no <strong>SOS Comida</strong>.</p>
+
+        <div class='card'>
+            <p><strong>Email:</strong> {email}</p>
+            <p><strong>Senha temporária:</strong></p>
+            <div class='senha'>{senhaTemporaria}</div>
+            <p>Após entrar, altere sua senha imediatamente em seu perfil.</p>
+        </div>
+
+        <p>Se você não solicitou esta alteração, entre em contato com o suporte.</p>
+        <p style='color:#94a3b8;font-size:12px;'>Este email foi enviado automaticamente. Não responda.</p>
+    </div>
+</body>
+</html>";
+
+        return await EnviarEmail(email, assunto, corpo);
+    }
+
     public async Task<bool> EnviarEmail(string destinatario, string assunto, string corpo)
     {
         try
         {
+            if (!string.IsNullOrWhiteSpace(_emailSettings.ResendApiKey))
+            {
+                return await EnviarViaResend(destinatario, assunto, corpo);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_emailSettings.SenderEmail) &&
+                !string.IsNullOrWhiteSpace(_emailSettings.SenderPassword))
+            {
+                return await EnviarViaSmtp(destinatario, assunto, corpo);
+            }
+
             // Se não houver configuração de email, simular envio
-            if (string.IsNullOrEmpty(_emailSettings.SenderEmail) || 
-                string.IsNullOrEmpty(_emailSettings.SenderPassword))
+            if (string.IsNullOrEmpty(_emailSettings.SenderEmail))
             {
                 _logger.LogWarning("Email não configurado. Simulando envio para: {Destinatario}", destinatario);
                 _logger.LogInformation("=== EMAIL SIMULADO ===");
@@ -126,25 +177,7 @@ public class EmailService : IEmailService
                 return true;
             }
 
-            using var client = new SmtpClient(_emailSettings.SmtpServer, _emailSettings.SmtpPort)
-            {
-                Credentials = new NetworkCredential(_emailSettings.SenderEmail, _emailSettings.SenderPassword),
-                EnableSsl = true
-            };
-
-            var mailMessage = new MailMessage
-            {
-                From = new MailAddress(_emailSettings.SenderEmail, _emailSettings.SenderName),
-                Subject = assunto,
-                Body = corpo,
-                IsBodyHtml = true
-            };
-            mailMessage.To.Add(destinatario);
-
-            await client.SendMailAsync(mailMessage);
-            _logger.LogInformation("Email enviado com sucesso para: {Destinatario}", destinatario);
-            
-            return true;
+            return false;
         }
         catch (Exception ex)
         {
@@ -152,6 +185,70 @@ public class EmailService : IEmailService
             return false;
         }
     }
+
+    private async Task<bool> EnviarViaSmtp(string destinatario, string assunto, string corpo)
+    {
+        using var client = new SmtpClient(_emailSettings.SmtpServer, _emailSettings.SmtpPort)
+        {
+            Credentials = new NetworkCredential(_emailSettings.SenderEmail, _emailSettings.SenderPassword),
+            EnableSsl = true
+        };
+
+        var mailMessage = new MailMessage
+        {
+            From = new MailAddress(_emailSettings.SenderEmail, _emailSettings.SenderName),
+            Subject = assunto,
+            Body = corpo,
+            IsBodyHtml = true
+        };
+        mailMessage.To.Add(destinatario);
+
+        await client.SendMailAsync(mailMessage);
+        _logger.LogInformation("Email SMTP enviado com sucesso para: {Destinatario}", destinatario);
+        return true;
+    }
+
+    private async Task<bool> EnviarViaResend(string destinatario, string assunto, string corpo)
+    {
+        var from = string.IsNullOrWhiteSpace(_emailSettings.SenderName)
+            ? _emailSettings.SenderEmail
+            : $"{_emailSettings.SenderName} <{_emailSettings.SenderEmail}>";
+
+        if (string.IsNullOrWhiteSpace(_emailSettings.SenderEmail))
+        {
+            _logger.LogError("SenderEmail não configurado para envio via Resend.");
+            return false;
+        }
+
+        var request = new ResendEmailRequest(
+            from,
+            new[] { destinatario },
+            assunto,
+            corpo
+        );
+
+        using var message = new HttpRequestMessage(HttpMethod.Post, _emailSettings.ResendApiUrl);
+        message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _emailSettings.ResendApiKey);
+        message.Content = JsonContent.Create(request);
+
+        using var response = await HttpClient.SendAsync(message);
+        if (response.IsSuccessStatusCode)
+        {
+            _logger.LogInformation("Email Resend enviado com sucesso para: {Destinatario}", destinatario);
+            return true;
+        }
+
+        var body = await response.Content.ReadAsStringAsync();
+        _logger.LogError("Falha ao enviar email via Resend ({StatusCode}): {Body}", (int)response.StatusCode, body);
+        return false;
+    }
+
+    private sealed record ResendEmailRequest(
+        string from,
+        string[] to,
+        string subject,
+        string html
+    );
 }
 
 // Serviço fake para desenvolvimento sem SMTP
@@ -175,6 +272,20 @@ public class FakeEmailService : IEmailService
         _logger.LogInformation("==========================================");
 
         var logEntry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}|BOAS_VINDAS|{email}|{nome}|{senhaTemporaria}\n";
+        await File.AppendAllTextAsync(_emailLogPath, logEntry);
+
+        return true;
+    }
+
+    public async Task<bool> EnviarEmailRecuperacaoSenha(string email, string nome, string senhaTemporaria)
+    {
+        _logger.LogInformation("=== 🔐 EMAIL RECUPERACAO (SIMULADO) ===");
+        _logger.LogInformation("Para: {Email}", email);
+        _logger.LogInformation("Nome: {Nome}", nome);
+        _logger.LogInformation("Senha Temporária: {Senha}", senhaTemporaria);
+        _logger.LogInformation("=======================================");
+
+        var logEntry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}|RECUPERACAO|{email}|{nome}|{senhaTemporaria}\n";
         await File.AppendAllTextAsync(_emailLogPath, logEntry);
 
         return true;
