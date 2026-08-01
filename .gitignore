@@ -5,3 +5,7 @@ appsettings.Local.json
 # DLL/EXE que so geram conflito binario entre maquinas); `dotnet build` recria.
 bin/
 obj/
+
+# npm install que caiu na pasta errada: lucide-react (ícones React) num backend
+# .NET, 7788 arquivos e 88 MB versionados sem nada referenciar.
+node_modules/
