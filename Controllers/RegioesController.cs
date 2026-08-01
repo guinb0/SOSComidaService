@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SOSComida.Data;
@@ -6,6 +7,7 @@ using SOSComida.Models;
 namespace SOSComida.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 public class RegioesController : ControllerBase
 {
@@ -17,6 +19,7 @@ public class RegioesController : ControllerBase
     }
 
     // GET: api/regioes
+    [AllowAnonymous]
     [HttpGet]
     public async Task<ActionResult<IEnumerable<RegiaoAdministrativa>>> GetRegioes()
     {
@@ -29,6 +32,7 @@ public class RegioesController : ControllerBase
     }
 
     // GET: api/regioes/{id}
+    [AllowAnonymous]
     [HttpGet("{id}")]
     public async Task<ActionResult<RegiaoAdministrativa>> GetRegiao(int id)
     {
@@ -43,6 +47,7 @@ public class RegioesController : ControllerBase
     }
 
     // POST: api/regioes
+    [Authorize(Policy = "Admin")]
     [HttpPost]
     public async Task<ActionResult<RegiaoAdministrativa>> CreateRegiao([FromBody] CreateRegiaoRequest request)
     {
@@ -72,6 +77,7 @@ public class RegioesController : ControllerBase
     }
 
     // PUT: api/regioes/{id}
+    [Authorize(Policy = "Admin")]
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateRegiao(int id, [FromBody] UpdateRegiaoRequest request)
     {
@@ -93,6 +99,7 @@ public class RegioesController : ControllerBase
     }
 
     // DELETE: api/regioes/{id}
+    [Authorize(Policy = "Admin")]
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteRegiao(int id)
     {
@@ -124,6 +131,7 @@ public class RegioesController : ControllerBase
     }
 
     // POST: api/regioes/moderador/{moderadorId}/atribuir
+    [Authorize(Policy = "Admin")]
     [HttpPost("moderador/{moderadorId}/atribuir")]
     public async Task<IActionResult> AtribuirRegioes(int moderadorId, [FromBody] AtribuirRegioesRequest request)
     {

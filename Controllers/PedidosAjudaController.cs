@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SOSComida.Data;
@@ -6,6 +7,7 @@ using SOSComida.Models;
 namespace SOSComida.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/pedidos-ajuda")]
 public class PedidosAjudaController : ControllerBase
 {

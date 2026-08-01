@@ -35,9 +35,12 @@ public static class CampanhaMapper
             Ativa = campanha.Ativa,
             DataCriacao = campanha.DataCriacao,
             NomeUsuario = campanha.Usuario?.Nome ?? "",
-            Progresso = campanha.MetaArrecadacao > 0 
-                ? (int)((campanha.ValorArrecadado / campanha.MetaArrecadacao) * 100) 
-                : 0
+            Progresso = campanha.MetaArrecadacao > 0
+                ? (int)((campanha.ValorArrecadado / campanha.MetaArrecadacao) * 100)
+                : 0,
+            // Exige .Include(c => c.Regiao) na consulta, senão RegiaoNome vem nulo.
+            RegiaoId = campanha.RegiaoId,
+            RegiaoNome = campanha.Regiao?.Nome
         };
     }
 

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SOSComida.DTOs.Requests;
 using SOSComida.DTOs.Responses;
@@ -6,6 +7,7 @@ using SOSComida.Models;
 namespace SOSComida.Controllers;
 
 [ApiController]
+[Authorize(Policy = "Moderacao")]
 [Route("api/moderacao/campanhas")]
 public class ModeracaoCampanhasController : ControllerBase
 {

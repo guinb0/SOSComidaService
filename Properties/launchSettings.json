@@ -20,6 +20,16 @@
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
+    },
+    "lan": {
+      "comentario": "Escuta em todas as interfaces para o celular alcançar a API pela rede local. O perfil 'http' só aceita conexões do próprio PC. Pode exigir liberar a porta 5118 no Firewall do Windows.",
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://0.0.0.0:5118",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
     }
   }
 }

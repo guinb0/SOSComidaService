@@ -1,2 +1,7 @@
 appsettings.*.local.json
 appsettings.Local.json
+
+# Saida de compilacao — nao versionar. Estavam rastreados por engano (73 MB de
+# DLL/EXE que so geram conflito binario entre maquinas); `dotnet build` recria.
+bin/
+obj/

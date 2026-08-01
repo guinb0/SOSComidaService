@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using SOSComida.Data;
 using SOSComida.Models;
@@ -9,48 +11,109 @@ using SOSComida.Services;
 namespace SOSComida.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("auth")]
 public class AuthController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
     private readonly IEmailService _emailService;
+    private readonly ISenhaService _senhas;
+    private readonly ITokenService _tokens;
+    private readonly IRefreshTokenService _refresh;
 
-    public AuthController(ApplicationDbContext context, IEmailService emailService)
+    public AuthController(
+        ApplicationDbContext context,
+        IEmailService emailService,
+        ISenhaService senhas,
+        ITokenService tokens,
+        IRefreshTokenService refresh)
     {
         _context = context;
         _emailService = emailService;
+        _senhas = senhas;
+        _tokens = tokens;
+        _refresh = refresh;
     }
 
-    private string GerarSenhaTemporaria(int tamanho = 8)
+    private static string GerarSenhaTemporaria(int tamanho = 8)
     {
         const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-        var random = new Random();
-        return new string(Enumerable.Repeat(chars, tamanho)
-            .Select(s => s[random.Next(s.Length)]).ToArray());
+        // RandomNumberGenerator, não Random(): a senha temporária vai por e-mail e
+        // dá acesso à conta — não pode ser adivinhável a partir do relógio.
+        return System.Security.Cryptography.RandomNumberGenerator.GetString(chars, tamanho);
     }
 
+    [EnableRateLimiting("auth")]
     [HttpPost("login")]
+    [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        // Buscar usuário no banco
-        var usuario = await _context.Usuarios
-            .FirstOrDefaultAsync(u => u.Email == request.Email && u.Senha == request.Senha);
+        var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Email == request.Email);
 
-        if (usuario != null)
+        // A senha era comparada em texto puro no próprio WHERE do banco. Agora a
+        // conferência é sobre o hash, e fora da consulta.
+        if (usuario is null || !_senhas.Confere(request.Senha, usuario.Senha))
         {
-            var response = new LoginResponse
-            {
-                Token = $"mock-jwt-token-{usuario.Id}-{Guid.NewGuid().ToString()[..8]}",
-                Usuario = usuario,
-                SenhaTemporaria = usuario.SenhaTemporaria
-            };
-            return Ok(response);
+            return Unauthorized(new { message = "Usuário ou senha inválidos" });
         }
 
-        return Unauthorized(new { message = "Usuário ou senha inválidos" });
+        // Conta antiga, com a senha ainda em texto puro (ou hash com custo menor):
+        // aproveita que a senha está em mãos e regrava no formato atual.
+        if (_senhas.PrecisaRehash(usuario.Senha))
+        {
+            usuario.Senha = _senhas.Hash(request.Senha);
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(new LoginResponse
+        {
+            Token = _tokens.Gerar(usuario),
+            RefreshToken = await _refresh.EmitirAsync(usuario.Id),
+            Usuario = UsuarioDto.De(usuario), // sem a senha
+            SenhaTemporaria = usuario.SenhaTemporaria,
+        });
+    }
+
+    /// <summary>
+    /// Troca um refresh token válido por um novo par (access + refresh), sem pedir
+    /// a senha. O refresh é rotacionado a cada chamada — o antigo deixa de valer.
+    /// É este o endpoint que o interceptor do axios no frontend já esperava.
+    /// </summary>
+    [EnableRateLimiting("auth")]
+    [HttpPost("refresh")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Refresh([FromBody] RefreshRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+            return BadRequest(new { message = "Refresh token ausente" });
+
+        var resultado = await _refresh.RotacionarAsync(request.RefreshToken);
+        if (resultado is null)
+            return Unauthorized(new { message = "Sessão expirada. Faça login novamente." });
+
+        var (novoRefresh, usuario) = resultado.Value;
+        return Ok(new LoginResponse
+        {
+            Token = _tokens.Gerar(usuario),
+            RefreshToken = novoRefresh,
+            Usuario = UsuarioDto.De(usuario),
+            SenhaTemporaria = usuario.SenhaTemporaria,
+        });
+    }
+
+    /// <summary>Revoga o refresh token (logout). Anônimo: o próprio token é a prova.</summary>
+    [HttpPost("logout")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Logout([FromBody] RefreshRequest request)
+    {
+        if (!string.IsNullOrWhiteSpace(request.RefreshToken))
+            await _refresh.RevogarAsync(request.RefreshToken);
+
+        return Ok(new { message = "Sessão encerrada." });
     }
 
     [HttpPost("register")]
+    [AllowAnonymous]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
         // Verificar se email já existe
@@ -89,12 +152,12 @@ public class AuthController : ControllerBase
             }
         }
 
-        // Criar novo usuário com a senha fornecida
+        // Criar novo usuário. A senha nunca é gravada como veio.
         var novoUsuario = new Usuario
         {
             Nome = request.Nome,
             Email = request.Email,
-            Senha = request.Senha,
+            Senha = _senhas.Hash(request.Senha),
             Telefone = request.Telefone ?? "",
             Endereco = request.Endereco ?? "",
             Cidade = request.Cidade ?? "",
@@ -132,25 +195,37 @@ public class AuthController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Anônimo de propósito: é o fluxo de quem entrou com senha temporária e ainda
+    /// não tem token. A senha atual é a prova de identidade.
+    /// </summary>
+    [EnableRateLimiting("auth")]
     [HttpPost("alterar-senha")]
+    [AllowAnonymous]
     public async Task<IActionResult> AlterarSenha([FromBody] AlterarSenhaRequest request)
     {
-        var usuario = await _context.Usuarios
-            .FirstOrDefaultAsync(u => u.Id == request.UsuarioId && u.Senha == request.SenhaAtual);
+        var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Id == request.UsuarioId);
 
-        if (usuario == null)
+        if (usuario is null || !_senhas.Confere(request.SenhaAtual, usuario.Senha))
         {
             return BadRequest(new { message = "Senha atual incorreta" });
         }
 
-        usuario.Senha = request.NovaSenha;
+        if (string.IsNullOrWhiteSpace(request.NovaSenha) || request.NovaSenha.Length < 6)
+        {
+            return BadRequest(new { message = "A nova senha deve ter pelo menos 6 caracteres" });
+        }
+
+        usuario.Senha = _senhas.Hash(request.NovaSenha);
         usuario.SenhaTemporaria = false;
         await _context.SaveChangesAsync();
 
         return Ok(new { message = "Senha alterada com sucesso!" });
     }
 
+    [EnableRateLimiting("auth")]
     [HttpPost("reenviar-senha")]
+    [AllowAnonymous]
     public async Task<IActionResult> ReenviarSenha([FromBody] ReenviarSenhaRequest request)
     {
         var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Email == request.Email);
@@ -161,9 +236,10 @@ public class AuthController : ControllerBase
             return Ok(new { message = "Se o email estiver cadastrado, uma nova senha será enviada." });
         }
 
-        // Gerar nova senha temporária
+        // Gerar nova senha temporária. Guarda o hash; o texto puro só existe aqui,
+        // o tempo de ir para o e-mail.
         var novaSenha = GerarSenhaTemporaria();
-        usuario.Senha = novaSenha;
+        usuario.Senha = _senhas.Hash(novaSenha);
         usuario.SenhaTemporaria = true;
         await _context.SaveChangesAsync();
 

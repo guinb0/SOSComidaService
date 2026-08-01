@@ -25,6 +25,22 @@ public class EmailService : IEmailService
         _logger = logger;
     }
 
+    private string GetLogoMarkup()
+    {
+        if (!string.IsNullOrWhiteSpace(_emailSettings.LogoUrl))
+        {
+            return $"<img src='{_emailSettings.LogoUrl}' alt='Logo SOS Comida' style='max-width:180px;height:auto;display:block;margin:0 auto 8px auto;' />";
+        }
+
+        return @"
+            <div style='display:flex;justify-content:center;margin-bottom:8px;'>
+                <div style='display:flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid #475569;border-radius:999px;background:#0f172a;'>
+                    <span style='font-size:20px;line-height:1;'>🍽️</span>
+                    <span class='logo'>SOS Comida</span>
+                </div>
+            </div>";
+    }
+
     public async Task<bool> EnviarEmailBoasVindas(string email, string nome, string senhaTemporaria)
     {
         var assunto = "🎉 Bem-vindo ao SOS Comida - Sua conta foi criada!";
@@ -52,7 +68,7 @@ public class EmailService : IEmailService
 <body>
     <div class='container'>
         <div class='header'>
-            <div class='logo'>🍽️ SOS Comida</div>
+            {GetLogoMarkup()}
             <p style='color: #94a3b8;'>Juntos contra a fome</p>
         </div>
         
@@ -120,12 +136,18 @@ public class EmailService : IEmailService
     <style>
         body {{ font-family: Arial, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; }}
         .container {{ max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border-radius: 16px; padding: 32px; border: 1px solid #475569; }}
+        .header {{ text-align: center; margin-bottom: 24px; }}
+        .logo {{ font-size: 28px; font-weight: bold; color: #10b981; }}
         .card {{ background-color: #1e293b; border-radius: 12px; padding: 24px; margin: 20px 0; border: 1px solid #475569; }}
         .senha {{ color: #ffffff; font-size: 20px; font-weight: bold; font-family: monospace; background-color: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 6px; display: inline-block; }}
     </style>
 </head>
 <body>
     <div class='container'>
+        <div class='header'>
+            {GetLogoMarkup()}
+            <p style='color: #94a3b8; margin: 0;'>Recuperação de acesso</p>
+        </div>
         <h2>Olá, {nome}!</h2>
         <p>Recebemos uma solicitação de recuperação de senha para sua conta no <strong>SOS Comida</strong>.</p>
 

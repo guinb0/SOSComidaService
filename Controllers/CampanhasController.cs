@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SOSComida.Data;
@@ -8,6 +9,7 @@ using SOSComida.Models;
 namespace SOSComida.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/campanhas")]
 public class CampanhasController : ControllerBase
 {
@@ -19,10 +21,12 @@ public class CampanhasController : ControllerBase
     }
 
     // GET: api/campanhas
+    [AllowAnonymous]
     [HttpGet]
     public async Task<ActionResult<IEnumerable<CampanhaDto>>> GetAll()
     {
         var campanhas = await _context.Campanhas
+            .Include(c => c.Regiao)
             .Where(c => c.Ativa)
             .OrderByDescending(c => c.DataCriacao)
             .ToListAsync();
@@ -40,13 +44,16 @@ public class CampanhasController : ControllerBase
             DataInicio = c.DataInicio,
             DataFim = c.DataFim,
             Status = c.Status,
-            Ativa = c.Ativa
+            Ativa = c.Ativa,
+            RegiaoId = c.RegiaoId,
+            RegiaoNome = c.Regiao?.Nome
         }).ToList();
-        
+
         return Ok(new { data = campanhasDto, total = campanhasDto.Count });
     }
 
     // GET: api/campanhas/moderacao - Retorna campanhas para moderação (filtradas por região do moderador)
+    [Authorize(Policy = "Moderacao")]
     [HttpGet("moderacao")]
     public async Task<ActionResult<IEnumerable<CampanhaDto>>> GetParaModeracao([FromQuery] int? moderadorId)
     {
@@ -106,6 +113,7 @@ public class CampanhasController : ControllerBase
     }
 
     // GET: api/campanhas/pendentes - Campanhas pendentes de aprovação
+    [Authorize(Policy = "Moderacao")]
     [HttpGet("pendentes")]
     public async Task<ActionResult<IEnumerable<CampanhaDto>>> GetPendentes([FromQuery] int? moderadorId)
     {
@@ -164,10 +172,12 @@ public class CampanhasController : ControllerBase
     }
 
     // GET: api/campanhas/principais
+    [AllowAnonymous]
     [HttpGet("principais")]
     public async Task<ActionResult<IEnumerable<CampanhaDto>>> GetPrincipais()
     {
         var campanhas = await _context.Campanhas
+            .Include(c => c.Regiao)
             .Where(c => c.Ativa)
             .OrderByDescending(c => c.DataCriacao)
             .Take(3)
@@ -186,17 +196,82 @@ public class CampanhasController : ControllerBase
             DataInicio = c.DataInicio,
             DataFim = c.DataFim,
             Status = c.Status,
-            Ativa = c.Ativa
+            Ativa = c.Ativa,
+            RegiaoId = c.RegiaoId,
+            RegiaoNome = c.Regiao?.Nome
         }).ToList();
-        
+
         return Ok(new { data = campanhasDto });
     }
 
+    // GET: api/campanhas/mapa?status=ativa
+    // Densidade de campanhas por Região Administrativa, para o mapa do DF.
+    [HttpGet("mapa")]
+    public async Task<ActionResult<IEnumerable<MapaRegiaoDto>>> GetMapa([FromQuery] string? status)
+    {
+        var query = _context.Campanhas.Where(c => c.RegiaoId.HasValue);
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var filtro = status.Trim().ToLower();
+            query = query.Where(c => c.Status.ToLower() == filtro);
+        }
+
+        var agregados = await query
+            .GroupBy(c => c.RegiaoId!.Value)
+            .Select(g => new
+            {
+                RegiaoId = g.Key,
+                TotalCampanhas = g.Count(),
+                CampanhasAtivas = g.Count(c => c.Ativa && c.Status == "ativa"),
+                ValorArrecadado = g.Sum(c => c.ValorArrecadado),
+                MetaTotal = g.Sum(c => c.MetaArrecadacao)
+            })
+            .ToListAsync();
+
+        var porRegiao = agregados.ToDictionary(a => a.RegiaoId);
+
+        // Todas as RAs ativas entram na resposta, mesmo sem campanha alguma.
+        var regioes = await _context.RegioesAdministrativas
+            .Where(r => r.Ativa)
+            .OrderBy(r => r.Id)
+            .ToListAsync();
+
+        var mapa = regioes.Select(r =>
+        {
+            porRegiao.TryGetValue(r.Id, out var a);
+            return new MapaRegiaoDto
+            {
+                RegiaoId = r.Id,
+                Nome = r.Nome,
+                Sigla = r.Sigla,
+                TotalCampanhas = a?.TotalCampanhas ?? 0,
+                CampanhasAtivas = a?.CampanhasAtivas ?? 0,
+                ValorArrecadado = a?.ValorArrecadado ?? 0m,
+                MetaTotal = a?.MetaTotal ?? 0m
+            };
+        }).ToList();
+
+        // Campanhas sem RegiaoId não aparecem no mapa; expomos a contagem para
+        // que a UI possa avisar que há campanhas fora do recorte territorial.
+        var semRegiao = await _context.Campanhas.CountAsync(c => !c.RegiaoId.HasValue);
+
+        return Ok(new
+        {
+            data = mapa,
+            totalCampanhas = mapa.Sum(m => m.TotalCampanhas),
+            semRegiao
+        });
+    }
+
     // GET: api/campanhas/5
+    [AllowAnonymous]
     [HttpGet("{id}")]
     public async Task<ActionResult<CampanhaDto>> GetById(int id)
     {
-        var campanha = await _context.Campanhas.FindAsync(id);
+        var campanha = await _context.Campanhas
+            .Include(c => c.Regiao)
+            .FirstOrDefaultAsync(c => c.Id == id);
 
         if (campanha == null)
             return NotFound(new { message = "Campanha não encontrada" });
@@ -214,7 +289,9 @@ public class CampanhasController : ControllerBase
             DataInicio = campanha.DataInicio,
             DataFim = campanha.DataFim,
             Status = campanha.Status,
-            Ativa = campanha.Ativa
+            Ativa = campanha.Ativa,
+            RegiaoId = campanha.RegiaoId,
+            RegiaoNome = campanha.Regiao?.Nome
         });
     }
 
@@ -223,6 +300,7 @@ public class CampanhasController : ControllerBase
     public async Task<ActionResult<IEnumerable<CampanhaDto>>> GetByUsuario(int usuarioId)
     {
         var campanhas = await _context.Campanhas
+            .Include(c => c.Regiao)
             .Where(c => c.UsuarioId == usuarioId && c.Ativa)
             .OrderByDescending(c => c.DataCriacao)
             .ToListAsync();
@@ -240,9 +318,11 @@ public class CampanhasController : ControllerBase
             DataInicio = c.DataInicio,
             DataFim = c.DataFim,
             Status = c.Status,
-            Ativa = c.Ativa
+            Ativa = c.Ativa,
+            RegiaoId = c.RegiaoId,
+            RegiaoNome = c.Regiao?.Nome
         }).ToList();
-        
+
         return Ok(new { data = campanhasDto, total = campanhasDto.Count });
     }
 
@@ -367,6 +447,7 @@ public class CampanhasController : ControllerBase
     }
 
     // POST: api/campanhas/5/aprovar
+    [Authorize(Policy = "Moderacao")]
     [HttpPost("{id}/aprovar")]
     public async Task<IActionResult> Aprovar(int id)
     {
@@ -385,6 +466,7 @@ public class CampanhasController : ControllerBase
     }
 
     // POST: api/campanhas/5/pausar
+    [Authorize(Policy = "Moderacao")]
     [HttpPost("{id}/pausar")]
     public async Task<IActionResult> Pausar(int id)
     {
@@ -403,6 +485,7 @@ public class CampanhasController : ControllerBase
     }
 
     // POST: api/campanhas/5/rejeitar
+    [Authorize(Policy = "Moderacao")]
     [HttpPost("{id}/rejeitar")]
     public async Task<IActionResult> Rejeitar(int id)
     {
@@ -421,6 +504,7 @@ public class CampanhasController : ControllerBase
     }
 
     // POST: api/campanhas/5/delegar - Delegar campanha para uma instituição
+    [Authorize(Policy = "Moderacao")]
     [HttpPost("{id}/delegar")]
     public async Task<IActionResult> DelegarCampanha(int id, [FromBody] DelegarCampanhaRequest request)
     {
@@ -538,6 +622,7 @@ public class CampanhasController : ControllerBase
     }
 
     // POST: api/campanhas/5/participantes/1/advertencia - Enviar advertência a um participante
+    [Authorize(Policy = "Moderacao")]
     [HttpPost("{campanhaId}/participantes/{participanteId}/advertencia")]
     public async Task<IActionResult> EnviarAdvertencia(int campanhaId, int participanteId, [FromBody] AdvertenciaParticipanteRequest request)
     {
@@ -576,6 +661,7 @@ public class CampanhasController : ControllerBase
     }
 
     // POST: api/campanhas/5/participantes/1/remover - Remover participante da campanha
+    [Authorize(Policy = "Moderacao")]
     [HttpPost("{campanhaId}/participantes/{participanteId}/remover")]
     public async Task<IActionResult> RemoverParticipanteCampanha(int campanhaId, int participanteId, [FromBody] RemoverParticipanteCampanhaRequest request)
     {

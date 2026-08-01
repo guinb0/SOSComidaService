@@ -22,6 +22,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Notificacao> Notificacoes { get; set; }
     public DbSet<RegiaoAdministrativa> RegioesAdministrativas { get; set; }
     public DbSet<ModeradorRegiao> ModeradorRegioes { get; set; }
+    public DbSet<RefreshToken> RefreshTokens { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -277,6 +278,23 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Estado).HasMaxLength(50);
             entity.Property(e => e.Cidade).HasMaxLength(200);
             entity.HasIndex(e => e.Sigla).IsUnique();
+        });
+
+        // Configurar RefreshToken
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.ToTable("tb_refresh_tokens");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TokenHash).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.SubstituidoPor).HasMaxLength(64);
+            // Busca por hash a cada refresh; único para não haver colisão.
+            entity.HasIndex(e => e.TokenHash).IsUnique();
+            entity.Ignore(e => e.Ativo); // propriedade calculada, não é coluna
+
+            entity.HasOne(e => e.Usuario)
+                  .WithMany()
+                  .HasForeignKey(e => e.UsuarioId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Configurar ModeradorRegiao (muitos-para-muitos)

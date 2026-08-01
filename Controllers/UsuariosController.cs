@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SOSComida.Data;
@@ -5,6 +6,7 @@ using SOSComida.Data;
 namespace SOSComida.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/usuarios")]
 public class UsuariosController : ControllerBase
 {
