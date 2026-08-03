@@ -1,0 +1,23 @@
+# Saída de compilação — regenerada por `dotnet build`, não pertence ao repo.
+bin/
+obj/
+
+# Banco local (SQLite). É estado da máquina: cada dev gera o seu na primeira
+# execução, e o SeedInicial popula com o cenário de demonstração.
+*.db
+*.db-shm
+*.db-wal
+
+# Arquivos enviados pelos usuários (fotos de perfil, notas fiscais).
+wwwroot/uploads/
+
+# Configuração local / segredos
+appsettings.Local.json
+appsettings.*.Development.json
+.env
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo

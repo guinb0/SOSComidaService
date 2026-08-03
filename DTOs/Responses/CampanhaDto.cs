@@ -17,6 +17,12 @@ public class CampanhaDto
     public DateTime DataCriacao { get; set; }
     public string NomeUsuario { get; set; } = string.Empty;
     public int Progresso { get; set; }
+
+    // Quem responde pela campanha. O front usa isto para decidir se mostra o
+    // envio de nota fiscal na prestação de contas.
+    public int? UsuarioId { get; set; }
+    public int? InstituicaoId { get; set; }
+    public string? StatusDelegacao { get; set; }
     public decimal PercentualArrecadado => MetaArrecadacao > 0 
         ? (ValorArrecadado / MetaArrecadacao) * 100 
         : 0;

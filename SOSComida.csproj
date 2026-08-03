@@ -16,7 +16,15 @@
       </PackageReference>
       <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0" />
       <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.3" />
+      <PackageReference Include="SkiaSharp" Version="3.116.1" />
       <PackageReference Include="Swashbuckle.AspNetCore" Version="10.0.1" />
+      <PackageReference Include="Tesseract" Version="5.2.0" />
+  </ItemGroup>
+
+  <!-- Modelos de idioma do Tesseract. Sem eles em disco, ao lado do binário,
+       o engine não inicializa. -->
+  <ItemGroup>
+    <None Include="tessdata\**\*.traineddata" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -22,6 +22,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Notificacao> Notificacoes { get; set; }
     public DbSet<RegiaoAdministrativa> RegioesAdministrativas { get; set; }
     public DbSet<ModeradorRegiao> ModeradorRegioes { get; set; }
+    public DbSet<NotaFiscal> NotasFiscais { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -132,6 +133,37 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(e => e.Campanha)
                   .WithMany()
                   .HasForeignKey(e => e.CampanhaId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // Configurar NotaFiscal (comprovante de gasto da campanha)
+        modelBuilder.Entity<NotaFiscal>(entity =>
+        {
+            entity.ToTable("tb_notas_fiscais");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ImagemUrl).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.TextoOcr).HasMaxLength(10000);
+            entity.Property(e => e.Descricao).HasMaxLength(500);
+            entity.Property(e => e.CnpjEmitente).HasMaxLength(18);
+            entity.Property(e => e.NomeEmitente).HasMaxLength(300);
+            entity.Property(e => e.NumeroNota).HasMaxLength(50);
+            entity.Property(e => e.ChaveAcesso).HasMaxLength(44);
+            // Dinheiro com precisão declarada, não em double: a soma dessas
+            // notas é comparada com o arrecadado da campanha e não pode
+            // acumular erro. HasPrecision em vez de HasColumnType("numeric")
+            // para não amarrar o modelo a um provider específico.
+            entity.Property(e => e.ValorTotal).HasPrecision(12, 2);
+
+            entity.HasIndex(e => e.CampanhaId);
+
+            entity.HasOne(e => e.Campanha)
+                  .WithMany()
+                  .HasForeignKey(e => e.CampanhaId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.EnviadoPor)
+                  .WithMany()
+                  .HasForeignKey(e => e.EnviadoPorId)
                   .OnDelete(DeleteBehavior.Restrict);
         });
 

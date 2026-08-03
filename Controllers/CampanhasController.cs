@@ -214,7 +214,10 @@ public class CampanhasController : ControllerBase
             DataInicio = campanha.DataInicio,
             DataFim = campanha.DataFim,
             Status = campanha.Status,
-            Ativa = campanha.Ativa
+            Ativa = campanha.Ativa,
+            UsuarioId = campanha.UsuarioId,
+            InstituicaoId = campanha.InstituicaoId,
+            StatusDelegacao = campanha.StatusDelegacao
         });
     }
 
