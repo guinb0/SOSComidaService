@@ -1,12 +1,16 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SOSComida.Data;
 using SOSComida.Models;
+using SOSComida.Seguranca;
+using SOSComida.Services;
 
 namespace SOSComida.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Policy = Politicas.Admin)]
 public class RegioesController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
@@ -18,6 +22,7 @@ public class RegioesController : ControllerBase
 
     // GET: api/regioes
     [HttpGet]
+    [AllowAnonymous]
     public async Task<ActionResult<IEnumerable<RegiaoAdministrativa>>> GetRegioes()
     {
         var regioes = await _context.RegioesAdministrativas
@@ -30,6 +35,7 @@ public class RegioesController : ControllerBase
 
     // GET: api/regioes/{id}
     [HttpGet("{id}")]
+    [AllowAnonymous]
     public async Task<ActionResult<RegiaoAdministrativa>> GetRegiao(int id)
     {
         var regiao = await _context.RegioesAdministrativas.FindAsync(id);
@@ -112,6 +118,7 @@ public class RegioesController : ControllerBase
 
     // GET: api/regioes/moderador/{moderadorId}
     [HttpGet("moderador/{moderadorId}")]
+    [Authorize(Policy = Politicas.Moderacao)]
     public async Task<ActionResult<IEnumerable<RegiaoAdministrativa>>> GetRegioesModerador(int moderadorId)
     {
         var regioes = await _context.ModeradorRegioes
@@ -134,7 +141,7 @@ public class RegioesController : ControllerBase
             return NotFound(new { message = "Moderador não encontrado" });
         }
 
-        if (moderador.Tipo != "moderador" && moderador.Tipo != "admin")
+        if (moderador.Tipo != TiposUsuario.Moderador && moderador.Tipo != TiposUsuario.Admin)
         {
             return BadRequest(new { message = "Usuário não é um moderador" });
         }
@@ -162,6 +169,8 @@ public class RegioesController : ControllerBase
             }
         }
 
+        _context.Registrar(User.Id(), AcoesAuditadas.RegioesAtribuidas, ItensAuditados.Usuario, moderadorId,
+            $"Atribuiu {request.RegioesIds.Count} região(ões) a {moderador.Nome}");
         await _context.SaveChangesAsync();
 
         return Ok(new { message = "Regiões atribuídas com sucesso" });

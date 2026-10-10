@@ -4,11 +4,12 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Roda num runtime mais novo quando o 9 não está instalado (ex.: só o 10). -->
+    <RollForward>Major</RollForward>
   </PropertyGroup>
 
   <ItemGroup>
       <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
-      <PackageReference Include="IdentityModel" Version="6.0.0" />
       <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.1" />
       <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -24,7 +25,16 @@
   <!-- Modelos de idioma do Tesseract. Sem eles em disco, ao lado do binário,
        o engine não inicializa. -->
   <ItemGroup>
-    <None Include="tessdata\**\*.traineddata" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="tessdata\**\*.traineddata" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Os testes vivem em tests/ dentro desta pasta; sem isto o SDK
+       compilaria os .cs deles junto com a API. -->
+  <ItemGroup>
+    <Compile Remove="tests/**" />
+    <Content Remove="tests/**" />
+    <None Remove="tests/**" />
+    <EmbeddedResource Remove="tests/**" />
   </ItemGroup>
 
 </Project>

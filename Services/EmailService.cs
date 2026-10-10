@@ -7,6 +7,7 @@ namespace SOSComida.Services;
 public interface IEmailService
 {
     Task<bool> EnviarEmailBoasVindas(string email, string nome, string senhaTemporaria);
+    Task<bool> EnviarSenhaRecuperacao(string email, string nome, string senhaTemporaria, TimeSpan validade);
     Task<bool> EnviarEmail(string destinatario, string assunto, string corpo);
 }
 
@@ -104,6 +105,17 @@ public class EmailService : IEmailService
         return await EnviarEmail(email, assunto, corpo);
     }
 
+    public Task<bool> EnviarSenhaRecuperacao(string email, string nome, string senhaTemporaria, TimeSpan validade)
+    {
+        var corpo = $@"<p>Olá, {WebUtility.HtmlEncode(nome)}.</p>
+<p>Recebemos um pedido para recuperar o acesso à sua conta no SOS Comida.</p>
+<p>Senha temporária: <strong>{senhaTemporaria}</strong></p>
+<p>Ela vale por {validade.TotalMinutes:0} minutos e você vai precisar criar uma senha nova ao entrar.
+Sua senha atual continua funcionando — se não foi você que pediu, é só ignorar este e-mail.</p>";
+
+        return EnviarEmail(email, "SOS Comida - Recuperação de acesso", corpo);
+    }
+
     public async Task<bool> EnviarEmail(string destinatario, string assunto, string corpo)
     {
         try
@@ -117,12 +129,6 @@ public class EmailService : IEmailService
                 _logger.LogInformation("Para: {Destinatario}", destinatario);
                 _logger.LogInformation("Assunto: {Assunto}", assunto);
                 _logger.LogInformation("======================");
-                
-                // Salvar email em arquivo para debug
-                var emailLogPath = Path.Combine(Directory.GetCurrentDirectory(), "Data", "emails_enviados.txt");
-                var logEntry = $"{DateTime.Now}|{destinatario}|{assunto}\n";
-                await File.AppendAllTextAsync(emailLogPath, logEntry);
-                
                 return true;
             }
 
@@ -154,42 +160,34 @@ public class EmailService : IEmailService
     }
 }
 
-// Serviço fake para desenvolvimento sem SMTP
+/// <summary>
+/// Serviço fake para desenvolvimento sem SMTP: só escreve no log do console.
+/// Antes também gravava as senhas temporárias em Data/emails_enviados.txt,
+/// e esse arquivo acabou commitado com senhas reais.
+/// </summary>
 public class FakeEmailService : IEmailService
 {
     private readonly ILogger<FakeEmailService> _logger;
-    private readonly string _emailLogPath;
 
-    public FakeEmailService(ILogger<FakeEmailService> logger, IWebHostEnvironment env)
+    public FakeEmailService(ILogger<FakeEmailService> logger) => _logger = logger;
+
+    public Task<bool> EnviarEmailBoasVindas(string email, string nome, string senhaTemporaria)
     {
-        _logger = logger;
-        _emailLogPath = Path.Combine(env.ContentRootPath, "Data", "emails_enviados.txt");
+        _logger.LogInformation("[email simulado] Boas-vindas para {Email} ({Nome}). Senha temporária: {Senha}",
+            email, nome, senhaTemporaria);
+        return Task.FromResult(true);
     }
 
-    public async Task<bool> EnviarEmailBoasVindas(string email, string nome, string senhaTemporaria)
+    public Task<bool> EnviarSenhaRecuperacao(string email, string nome, string senhaTemporaria, TimeSpan validade)
     {
-        _logger.LogInformation("=== 📧 EMAIL DE BOAS-VINDAS (SIMULADO) ===");
-        _logger.LogInformation("Para: {Email}", email);
-        _logger.LogInformation("Nome: {Nome}", nome);
-        _logger.LogInformation("Senha Temporária: {Senha}", senhaTemporaria);
-        _logger.LogInformation("==========================================");
-
-        var logEntry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}|BOAS_VINDAS|{email}|{nome}|{senhaTemporaria}\n";
-        await File.AppendAllTextAsync(_emailLogPath, logEntry);
-
-        return true;
+        _logger.LogInformation("[email simulado] Recuperação para {Email} ({Nome}). Senha temporária: {Senha} (vale {Minutos} min)",
+            email, nome, senhaTemporaria, validade.TotalMinutes);
+        return Task.FromResult(true);
     }
 
-    public async Task<bool> EnviarEmail(string destinatario, string assunto, string corpo)
+    public Task<bool> EnviarEmail(string destinatario, string assunto, string corpo)
     {
-        _logger.LogInformation("=== 📧 EMAIL (SIMULADO) ===");
-        _logger.LogInformation("Para: {Destinatario}", destinatario);
-        _logger.LogInformation("Assunto: {Assunto}", assunto);
-        _logger.LogInformation("===========================");
-
-        var logEntry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}|GERAL|{destinatario}|{assunto}\n";
-        await File.AppendAllTextAsync(_emailLogPath, logEntry);
-
-        return true;
+        _logger.LogInformation("[email simulado] Para {Destinatario}: {Assunto}", destinatario, assunto);
+        return Task.FromResult(true);
     }
 }

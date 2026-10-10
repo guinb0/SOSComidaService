@@ -8,6 +8,7 @@ public class Doacao
     public string? Descricao { get; set; }
     public string Status { get; set; } = "confirmada"; // pendente, confirmada, cancelada
     public string? ComprovanteUrl { get; set; }
+    public string? MetodoPagamento { get; set; } // pix, credito, debito
     public DateTime DataDoacao { get; set; } = DateTime.Now;
     public DateTime? DataConfirmacao { get; set; }
 

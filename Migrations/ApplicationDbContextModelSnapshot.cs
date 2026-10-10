@@ -262,6 +262,10 @@ namespace SOSComida.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("MetodoPagamento")
+                        .HasMaxLength(30)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -646,6 +650,9 @@ namespace SOSComida.Migrations
                     b.Property<int?>("AprovadoPorId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("Ativo")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Cidade")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -697,6 +704,12 @@ namespace SOSComida.Migrations
 
                     b.Property<string>("Senha")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("SenhaRecuperacaoExpiraEm")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SenhaRecuperacaoHash")
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("SenhaTemporaria")

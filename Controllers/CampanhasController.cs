@@ -1,9 +1,14 @@
+using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SOSComida.Data;
 using SOSComida.DTOs.Requests;
 using SOSComida.DTOs.Responses;
+using SOSComida.Mappers;
 using SOSComida.Models;
+using SOSComida.Seguranca;
+using SOSComida.Services;
 
 namespace SOSComida.Controllers;
 
@@ -20,152 +25,57 @@ public class CampanhasController : ControllerBase
 
     // GET: api/campanhas
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<CampanhaDto>>> GetAll()
+    [AllowAnonymous]
+    public async Task<IActionResult> GetAll()
     {
         var campanhas = await _context.Campanhas
             .Where(c => c.Ativa)
             .OrderByDescending(c => c.DataCriacao)
             .ToListAsync();
 
-        var campanhasDto = campanhas.Select(c => new CampanhaDto
-        {
-            Id = c.Id,
-            Titulo = c.Titulo,
-            Descricao = c.Descricao,
-            ImagemUrl = c.ImagemUrl,
-            Localizacao = c.Localizacao,
-            MetaArrecadacao = c.MetaArrecadacao,
-            ValorArrecadado = c.ValorArrecadado,
-            Progresso = c.MetaArrecadacao > 0 ? (int)((c.ValorArrecadado / c.MetaArrecadacao) * 100) : 0,
-            DataInicio = c.DataInicio,
-            DataFim = c.DataFim,
-            Status = c.Status,
-            Ativa = c.Ativa
-        }).ToList();
-        
+        var campanhasDto = campanhas.Select(c => c.ToDto()).ToList();
         return Ok(new { data = campanhasDto, total = campanhasDto.Count });
     }
 
-    // GET: api/campanhas/moderacao - Retorna campanhas para moderação (filtradas por região do moderador)
+    // GET: api/campanhas/moderacao - Campanhas para moderação, filtradas pelas regiões do moderador
     [HttpGet("moderacao")]
-    public async Task<ActionResult<IEnumerable<CampanhaDto>>> GetParaModeracao([FromQuery] int? moderadorId)
+    [Authorize(Policy = Politicas.Moderacao)]
+    public async Task<IActionResult> GetParaModeracao()
     {
-        IQueryable<Campanha> query = _context.Campanhas;
-
-        // Se foi passado moderadorId, filtrar pelas regiões do moderador
-        if (moderadorId.HasValue)
-        {
-            var moderador = await _context.Usuarios.FindAsync(moderadorId.Value);
-            
-            // Admin vê tudo
-            if (moderador?.Tipo != "admin")
-            {
-                var regioesDoModerador = await _context.ModeradorRegioes
-                    .Where(mr => mr.ModeradorId == moderadorId.Value && mr.Ativo)
-                    .Select(mr => mr.RegiaoId)
-                    .ToListAsync();
-
-                // Se o moderador tem regiões atribuídas, filtrar
-                if (regioesDoModerador.Any())
-                {
-                    query = query.Where(c => c.RegiaoId.HasValue && regioesDoModerador.Contains(c.RegiaoId.Value));
-                }
-                else
-                {
-                    // Moderador sem regiões não vê nada
-                    return Ok(new List<CampanhaDto>());
-                }
-            }
-        }
+        var query = await FiltrarPorRegiaoDoModeradorAsync(_context.Campanhas);
+        if (query == null)
+            return Ok(new List<CampanhaDto>());
 
         var campanhas = await query
             .Include(c => c.Regiao)
-            .OrderByDescending(c => c.Status == "pendente") // Pendentes primeiro
+            .OrderByDescending(c => c.Status == StatusCampanhas.Pendente) // Pendentes primeiro
             .ThenByDescending(c => c.DataCriacao)
             .ToListAsync();
 
-        var campanhasDto = campanhas.Select(c => new CampanhaDto
-        {
-            Id = c.Id,
-            Titulo = c.Titulo,
-            Descricao = c.Descricao,
-            ImagemUrl = c.ImagemUrl,
-            Localizacao = c.Localizacao,
-            MetaArrecadacao = c.MetaArrecadacao,
-            ValorArrecadado = c.ValorArrecadado,
-            Progresso = c.MetaArrecadacao > 0 ? (int)((c.ValorArrecadado / c.MetaArrecadacao) * 100) : 0,
-            DataInicio = c.DataInicio,
-            DataFim = c.DataFim,
-            Status = c.Status,
-            Ativa = c.Ativa,
-            RegiaoId = c.RegiaoId,
-            RegiaoNome = c.Regiao?.Nome
-        }).ToList();
-        
-        return Ok(campanhasDto);
+        return Ok(campanhas.Select(c => c.ToDto()).ToList());
     }
 
     // GET: api/campanhas/pendentes - Campanhas pendentes de aprovação
     [HttpGet("pendentes")]
-    public async Task<ActionResult<IEnumerable<CampanhaDto>>> GetPendentes([FromQuery] int? moderadorId)
+    [Authorize(Policy = Politicas.Moderacao)]
+    public async Task<IActionResult> GetPendentes()
     {
-        IQueryable<Campanha> query = _context.Campanhas
-            .Where(c => c.Status == "pendente");
-
-        // Se foi passado moderadorId, filtrar pelas regiões do moderador
-        if (moderadorId.HasValue)
-        {
-            var regioesDoModerador = await _context.ModeradorRegioes
-                .Where(mr => mr.ModeradorId == moderadorId.Value && mr.Ativo)
-                .Select(mr => mr.RegiaoId)
-                .ToListAsync();
-
-            // Se o moderador tem regiões atribuídas, filtrar
-            if (regioesDoModerador.Any())
-            {
-                query = query.Where(c => c.RegiaoId.HasValue && regioesDoModerador.Contains(c.RegiaoId.Value));
-            }
-            // Se não tem regiões, verifica se é admin (admin vê tudo)
-            else
-            {
-                var moderador = await _context.Usuarios.FindAsync(moderadorId.Value);
-                if (moderador?.Tipo != "admin")
-                {
-                    // Moderador sem regiões não vê nada
-                    return Ok(new List<CampanhaDto>());
-                }
-            }
-        }
+        var query = await FiltrarPorRegiaoDoModeradorAsync(_context.Campanhas.Where(c => c.Status == StatusCampanhas.Pendente));
+        if (query == null)
+            return Ok(new List<CampanhaDto>());
 
         var campanhas = await query
             .Include(c => c.Regiao)
             .OrderByDescending(c => c.DataCriacao)
             .ToListAsync();
 
-        var campanhasDto = campanhas.Select(c => new CampanhaDto
-        {
-            Id = c.Id,
-            Titulo = c.Titulo,
-            Descricao = c.Descricao,
-            ImagemUrl = c.ImagemUrl,
-            Localizacao = c.Localizacao,
-            MetaArrecadacao = c.MetaArrecadacao,
-            ValorArrecadado = c.ValorArrecadado,
-            Progresso = c.MetaArrecadacao > 0 ? (int)((c.ValorArrecadado / c.MetaArrecadacao) * 100) : 0,
-            DataInicio = c.DataInicio,
-            DataFim = c.DataFim,
-            Status = c.Status,
-            Ativa = c.Ativa,
-            RegiaoId = c.RegiaoId,
-            RegiaoNome = c.Regiao?.Nome
-        }).ToList();
-        
-        return Ok(campanhasDto);
+        return Ok(campanhas.Select(c => c.ToDto()).ToList());
     }
 
     // GET: api/campanhas/principais
     [HttpGet("principais")]
-    public async Task<ActionResult<IEnumerable<CampanhaDto>>> GetPrincipais()
+    [AllowAnonymous]
+    public async Task<IActionResult> GetPrincipais()
     {
         var campanhas = await _context.Campanhas
             .Where(c => c.Ativa)
@@ -173,85 +83,39 @@ public class CampanhasController : ControllerBase
             .Take(3)
             .ToListAsync();
 
-        var campanhasDto = campanhas.Select(c => new CampanhaDto
-        {
-            Id = c.Id,
-            Titulo = c.Titulo,
-            Descricao = c.Descricao,
-            ImagemUrl = c.ImagemUrl,
-            Localizacao = c.Localizacao,
-            MetaArrecadacao = c.MetaArrecadacao,
-            ValorArrecadado = c.ValorArrecadado,
-            Progresso = c.MetaArrecadacao > 0 ? (int)((c.ValorArrecadado / c.MetaArrecadacao) * 100) : 0,
-            DataInicio = c.DataInicio,
-            DataFim = c.DataFim,
-            Status = c.Status,
-            Ativa = c.Ativa
-        }).ToList();
-        
-        return Ok(new { data = campanhasDto });
+        return Ok(new { data = campanhas.Select(c => c.ToDto()).ToList() });
     }
 
     // GET: api/campanhas/5
     [HttpGet("{id}")]
-    public async Task<ActionResult<CampanhaDto>> GetById(int id)
+    [AllowAnonymous]
+    public async Task<IActionResult> GetById(int id)
     {
         var campanha = await _context.Campanhas.FindAsync(id);
 
         if (campanha == null)
             return NotFound(new { message = "Campanha não encontrada" });
 
-        return Ok(new CampanhaDto
-        {
-            Id = campanha.Id,
-            Titulo = campanha.Titulo,
-            Descricao = campanha.Descricao,
-            ImagemUrl = campanha.ImagemUrl,
-            Localizacao = campanha.Localizacao,
-            MetaArrecadacao = campanha.MetaArrecadacao,
-            ValorArrecadado = campanha.ValorArrecadado,
-            Progresso = campanha.MetaArrecadacao > 0 ? (int)((campanha.ValorArrecadado / campanha.MetaArrecadacao) * 100) : 0,
-            DataInicio = campanha.DataInicio,
-            DataFim = campanha.DataFim,
-            Status = campanha.Status,
-            Ativa = campanha.Ativa,
-            UsuarioId = campanha.UsuarioId,
-            InstituicaoId = campanha.InstituicaoId,
-            StatusDelegacao = campanha.StatusDelegacao
-        });
+        return Ok(campanha.ToDto());
     }
 
     // GET: api/campanhas/usuario/5
     [HttpGet("usuario/{usuarioId}")]
-    public async Task<ActionResult<IEnumerable<CampanhaDto>>> GetByUsuario(int usuarioId)
+    [AllowAnonymous]
+    public async Task<IActionResult> GetByUsuario(int usuarioId)
     {
         var campanhas = await _context.Campanhas
             .Where(c => c.UsuarioId == usuarioId && c.Ativa)
             .OrderByDescending(c => c.DataCriacao)
             .ToListAsync();
 
-        var campanhasDto = campanhas.Select(c => new CampanhaDto
-        {
-            Id = c.Id,
-            Titulo = c.Titulo,
-            Descricao = c.Descricao,
-            ImagemUrl = c.ImagemUrl,
-            Localizacao = c.Localizacao,
-            MetaArrecadacao = c.MetaArrecadacao,
-            ValorArrecadado = c.ValorArrecadado,
-            Progresso = c.MetaArrecadacao > 0 ? (int)((c.ValorArrecadado / c.MetaArrecadacao) * 100) : 0,
-            DataInicio = c.DataInicio,
-            DataFim = c.DataFim,
-            Status = c.Status,
-            Ativa = c.Ativa
-        }).ToList();
-        
+        var campanhasDto = campanhas.Select(c => c.ToDto()).ToList();
         return Ok(new { data = campanhasDto, total = campanhasDto.Count });
     }
 
     // POST: api/campanhas
     [HttpPost]
-    public async Task<ActionResult<CampanhaDto>> Create([FromBody] CreateCampanhaDto dto)
+    public async Task<IActionResult> Create([FromBody] CreateCampanhaDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Titulo))
             return BadRequest(new { message = "Título é obrigatório" });
@@ -262,43 +126,32 @@ public class CampanhasController : ControllerBase
         if (dto.MetaArrecadacao <= 0)
             return BadRequest(new { message = "Meta de arrecadação deve ser maior que zero" });
 
+        if (dto.DataFim < dto.DataInicio)
+            return BadRequest(new { message = "A data de término deve ser depois do início" });
+
         var campanha = new Campanha
         {
             Titulo = dto.Titulo,
             Descricao = dto.Descricao,
-            ImagemUrl = dto.ImagemUrl ?? "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800",
+            ImagemUrl = dto.ImagemUrl ?? dto.Imagens?.FirstOrDefault()
+                        ?? "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800",
+            Imagens = dto.Imagens is { Count: > 0 } ? JsonSerializer.Serialize(dto.Imagens) : null,
             Localizacao = dto.Localizacao ?? "Brasil",
             MetaArrecadacao = dto.MetaArrecadacao,
             ValorArrecadado = 0,
             DataInicio = DateTime.SpecifyKind(dto.DataInicio, DateTimeKind.Utc),
             DataFim = DateTime.SpecifyKind(dto.DataFim, DateTimeKind.Utc),
-            Status = "pendente", // Precisa aprovação de moderador
+            Status = StatusCampanhas.Pendente, // Precisa aprovação de moderador
             Ativa = false, // Só fica ativa após aprovação
             DataCriacao = DateTime.UtcNow,
-            UsuarioId = null, // TODO: Pegar do token JWT quando implementar autenticação
+            UsuarioId = User.Id(),
             RegiaoId = dto.RegiaoId
         };
 
         _context.Campanhas.Add(campanha);
         await _context.SaveChangesAsync();
 
-        var campanhaDto = new CampanhaDto
-        {
-            Id = campanha.Id,
-            Titulo = campanha.Titulo,
-            Descricao = campanha.Descricao,
-            ImagemUrl = campanha.ImagemUrl,
-            Localizacao = campanha.Localizacao,
-            MetaArrecadacao = campanha.MetaArrecadacao,
-            ValorArrecadado = campanha.ValorArrecadado,
-            Progresso = 0,
-            DataInicio = campanha.DataInicio,
-            DataFim = campanha.DataFim,
-            Status = campanha.Status,
-            Ativa = campanha.Ativa
-        };
-
-        return CreatedAtAction(nameof(GetById), new { id = campanha.Id }, campanhaDto);
+        return CreatedAtAction(nameof(GetById), new { id = campanha.Id }, campanha.ToDto());
     }
 
     // PUT: api/campanhas/5
@@ -310,13 +163,34 @@ public class CampanhasController : ControllerBase
         if (campanha == null)
             return NotFound(new { message = "Campanha não encontrada" });
 
+        if (!PermissoesCampanha.PodeResponderPor(campanha, User))
+            return Forbid();
+
+        if (dto.MetaArrecadacao <= 0)
+            return BadRequest(new { message = "Meta de arrecadação deve ser maior que zero" });
+
+        if (dto.Status != null && dto.Status != campanha.Status)
+        {
+            var erro = ValidarMudancaDeStatus(campanha, dto.Status);
+            if (erro != null)
+                return StatusCode(erro.Value.Codigo, new { message = erro.Value.Mensagem });
+
+            campanha.Status = dto.Status;
+            campanha.Ativa = dto.Status == StatusCampanhas.Ativa;
+        }
+
         campanha.Titulo = dto.Titulo;
         campanha.Descricao = dto.Descricao;
-        campanha.ImagemUrl = dto.ImagemUrl;
+        campanha.ImagemUrl = dto.ImagemUrl ?? campanha.ImagemUrl;
+        campanha.Localizacao = dto.Localizacao ?? campanha.Localizacao;
         campanha.MetaArrecadacao = dto.MetaArrecadacao;
-        campanha.DataInicio = dto.DataInicio;
-        campanha.DataFim = dto.DataFim;
+        campanha.DataInicio = DateTime.SpecifyKind(dto.DataInicio, DateTimeKind.Utc);
+        campanha.DataFim = DateTime.SpecifyKind(dto.DataFim, DateTimeKind.Utc);
         campanha.DataAtualizacao = DateTime.UtcNow;
+
+        if (User.EhModerador() && campanha.UsuarioId != User.Id())
+            _context.Registrar(User.Id(), AcoesAuditadas.CampanhaEditada, ItensAuditados.Campanha, id,
+                $"Editou a campanha \"{campanha.Titulo}\"");
 
         await _context.SaveChangesAsync();
 
@@ -332,6 +206,9 @@ public class CampanhasController : ControllerBase
         if (campanha == null)
             return NotFound(new { message = "Campanha não encontrada" });
 
+        if (!PermissoesCampanha.PodeResponderPor(campanha, User))
+            return Forbid();
+
         campanha.Ativa = false;
         campanha.DataAtualizacao = DateTime.UtcNow;
 
@@ -340,7 +217,7 @@ public class CampanhasController : ControllerBase
         return NoContent();
     }
 
-    // POST: api/campanhas/5/doar
+    // POST: api/campanhas/5/doar - Formato antigo (valor puro no corpo); prefira POST /doacoes
     [HttpPost("{id}/doar")]
     public async Task<IActionResult> Doar(int id, [FromBody] decimal valor)
     {
@@ -349,20 +226,21 @@ public class CampanhasController : ControllerBase
         if (campanha == null)
             return NotFound(new { message = "Campanha não encontrada" });
 
+        if (!campanha.Ativa)
+            return BadRequest(new { message = "Esta campanha não está recebendo doações" });
+
         if (valor <= 0)
             return BadRequest(new { message = "Valor da doação deve ser maior que zero" });
 
-        campanha.ValorArrecadado += valor;
-        campanha.DataAtualizacao = DateTime.UtcNow;
-
+        await DoacoesController.RegistrarAsync(_context, campanha, User.Id(), valor, metodo: null);
         await _context.SaveChangesAsync();
 
-        var percentual = campanha.MetaArrecadacao > 0 
-            ? (int)((campanha.ValorArrecadado / campanha.MetaArrecadacao) * 100) 
+        var percentual = campanha.MetaArrecadacao > 0
+            ? (int)((campanha.ValorArrecadado / campanha.MetaArrecadacao) * 100)
             : 0;
 
-        return Ok(new 
-        { 
+        return Ok(new
+        {
             message = "Doação realizada com sucesso!",
             valorArrecadado = campanha.ValorArrecadado,
             percentual = percentual
@@ -371,60 +249,47 @@ public class CampanhasController : ControllerBase
 
     // POST: api/campanhas/5/aprovar
     [HttpPost("{id}/aprovar")]
-    public async Task<IActionResult> Aprovar(int id)
-    {
-        var campanha = await _context.Campanhas.FindAsync(id);
-
-        if (campanha == null)
-            return NotFound(new { message = "Campanha não encontrada" });
-
-        campanha.Status = "ativa";
-        campanha.Ativa = true;
-        campanha.DataAtualizacao = DateTime.UtcNow;
-
-        await _context.SaveChangesAsync();
-
-        return Ok(new { message = "Campanha aprovada com sucesso!" });
-    }
+    [Authorize(Policy = Politicas.Moderacao)]
+    public Task<IActionResult> Aprovar(int id) =>
+        MudarStatusAsync(id, StatusCampanhas.Ativa, ativa: true, "Campanha aprovada com sucesso!", AcoesAuditadas.CampanhaAprovada);
 
     // POST: api/campanhas/5/pausar
     [HttpPost("{id}/pausar")]
-    public async Task<IActionResult> Pausar(int id)
-    {
-        var campanha = await _context.Campanhas.FindAsync(id);
-
-        if (campanha == null)
-            return NotFound(new { message = "Campanha não encontrada" });
-
-        campanha.Status = "pausada";
-        campanha.Ativa = false;
-        campanha.DataAtualizacao = DateTime.UtcNow;
-
-        await _context.SaveChangesAsync();
-
-        return Ok(new { message = "Campanha pausada com sucesso!" });
-    }
+    [Authorize(Policy = Politicas.Moderacao)]
+    public Task<IActionResult> Pausar(int id) =>
+        MudarStatusAsync(id, StatusCampanhas.Pausada, ativa: false, "Campanha pausada com sucesso!", AcoesAuditadas.CampanhaPausada);
 
     // POST: api/campanhas/5/rejeitar
     [HttpPost("{id}/rejeitar")]
-    public async Task<IActionResult> Rejeitar(int id)
+    [Authorize(Policy = Politicas.Moderacao)]
+    public Task<IActionResult> Rejeitar(int id) =>
+        MudarStatusAsync(id, StatusCampanhas.Rejeitada, ativa: false, "Campanha rejeitada.", AcoesAuditadas.CampanhaRejeitada);
+
+    // POST: api/campanhas/5/finalizar - Encerra a campanha (responsável ou moderação)
+    [HttpPost("{id}/finalizar")]
+    public async Task<IActionResult> Finalizar(int id)
     {
         var campanha = await _context.Campanhas.FindAsync(id);
-
         if (campanha == null)
             return NotFound(new { message = "Campanha não encontrada" });
 
-        campanha.Status = "rejeitada";
+        if (!PermissoesCampanha.PodeResponderPor(campanha, User))
+            return Forbid();
+
+        campanha.Status = StatusCampanhas.Finalizada;
         campanha.Ativa = false;
         campanha.DataAtualizacao = DateTime.UtcNow;
-
+        if (User.EhModerador())
+            _context.Registrar(User.Id(), AcoesAuditadas.CampanhaFinalizada, ItensAuditados.Campanha, id,
+                $"Finalizou a campanha \"{campanha.Titulo}\"");
         await _context.SaveChangesAsync();
 
-        return Ok(new { message = "Campanha rejeitada." });
+        return Ok(new { message = "Campanha finalizada com sucesso!" });
     }
 
     // POST: api/campanhas/5/delegar - Delegar campanha para uma instituição
     [HttpPost("{id}/delegar")]
+    [Authorize(Policy = Politicas.Moderacao)]
     public async Task<IActionResult> DelegarCampanha(int id, [FromBody] DelegarCampanhaRequest request)
     {
         var campanha = await _context.Campanhas.FindAsync(id);
@@ -436,31 +301,31 @@ public class CampanhasController : ControllerBase
         if (instituicao == null)
             return NotFound(new { message = "Instituição não encontrada" });
 
-        if (instituicao.Tipo != "instituicao")
+        if (instituicao.Tipo != TiposUsuario.Instituicao)
             return BadRequest(new { message = "O usuário selecionado não é uma instituição" });
 
         // Atualizar campanha com delegação pendente
         campanha.InstituicaoId = request.InstituicaoId;
-        campanha.StatusDelegacao = "pendente";
-        campanha.Status = "delegada";
+        campanha.StatusDelegacao = StatusDelegacoes.Pendente;
+        campanha.Status = StatusCampanhas.Delegada;
         campanha.DataDelegacao = DateTime.UtcNow;
         campanha.DataAtualizacao = DateTime.UtcNow;
 
-        // Criar notificação para a instituição
-        var notificacao = new Notificacao
+        _context.Notificacoes.Add(new Notificacao
         {
             UsuarioId = request.InstituicaoId,
-            Tipo = "delegacao_campanha",
+            Tipo = TiposNotificacao.DelegacaoCampanha,
             Titulo = "Nova campanha para você gerenciar!",
             Mensagem = $"A campanha '{campanha.Titulo}' foi delegada para sua instituição. Você pode aceitar ou recusar.",
             CampanhaId = id,
-            StatusDelegacao = "pendente"
-        };
-
-        _context.Notificacoes.Add(notificacao);
+            StatusDelegacao = StatusDelegacoes.Pendente
+        });
+        _context.Registrar(User.Id(), AcoesAuditadas.CampanhaDelegada, ItensAuditados.Campanha, id,
+            $"Delegou a campanha \"{campanha.Titulo}\" para {instituicao.Nome}");
         await _context.SaveChangesAsync();
 
-        return Ok(new { 
+        return Ok(new
+        {
             message = $"Campanha delegada para {instituicao.Nome}. Aguardando aceitação.",
             instituicao = instituicao.Nome
         });
@@ -468,12 +333,14 @@ public class CampanhasController : ControllerBase
 
     // GET: api/campanhas/instituicoes - Listar instituições disponíveis para delegação
     [HttpGet("instituicoes")]
+    [Authorize(Policy = Politicas.Moderacao)]
     public async Task<IActionResult> GetInstituicoes()
     {
         var instituicoes = await _context.Usuarios
-            .Where(u => u.Tipo == "instituicao")
+            .Where(u => u.Tipo == TiposUsuario.Instituicao)
             .OrderBy(u => u.Nome)
-            .Select(u => new {
+            .Select(u => new
+            {
                 u.Id,
                 u.Nome,
                 u.Email,
@@ -485,7 +352,7 @@ public class CampanhasController : ControllerBase
         return Ok(new { data = instituicoes, total = instituicoes.Count });
     }
 
-    // POST: api/campanhas/5/participantes - Inscrever como voluntário
+    // POST: api/campanhas/5/participantes - Inscrever o usuário logado como voluntário
     [HttpPost("{id}/participantes")]
     public async Task<IActionResult> AdicionarParticipante(int id, [FromBody] AdicionarParticipanteRequest request)
     {
@@ -493,9 +360,9 @@ public class CampanhasController : ControllerBase
         if (campanha == null)
             return NotFound(new { message = "Campanha não encontrada" });
 
-        // Verificar se já é participante
+        var usuarioId = User.Id();
         var jaParticipa = await _context.ParticipantesCampanha
-            .AnyAsync(p => p.CampanhaId == id && p.UsuarioId == request.UsuarioId && p.Status == "ativo");
+            .AnyAsync(p => p.CampanhaId == id && p.UsuarioId == usuarioId && p.Status == StatusParticipantes.Ativo);
 
         if (jaParticipa)
             return BadRequest(new { message = "Você já está participando desta campanha" });
@@ -503,29 +370,38 @@ public class CampanhasController : ControllerBase
         var participante = new ParticipanteCampanha
         {
             CampanhaId = id,
-            UsuarioId = request.UsuarioId,
-            Tipo = request.Tipo ?? "voluntario",
-            Status = "ativo",
+            UsuarioId = usuarioId,
+            Tipo = request.Tipo is "doador" ? "doador" : "voluntario",
+            Status = StatusParticipantes.Ativo,
             DataEntrada = DateTime.UtcNow
         };
 
         _context.ParticipantesCampanha.Add(participante);
         await _context.SaveChangesAsync();
 
-        return Ok(new { 
+        return Ok(new
+        {
             message = "Inscrição realizada com sucesso!",
             participanteId = participante.Id
         });
     }
 
-    // GET: api/campanhas/5/participantes - Listar participantes
+    // GET: api/campanhas/5/participantes - Listar participantes (com contato: só responsável/moderação)
     [HttpGet("{id}/participantes")]
     public async Task<IActionResult> GetParticipantes(int id)
     {
+        var campanha = await _context.Campanhas.FindAsync(id);
+        if (campanha == null)
+            return NotFound(new { message = "Campanha não encontrada" });
+
+        if (!PermissoesCampanha.PodeResponderPor(campanha, User))
+            return Forbid();
+
         var participantes = await _context.ParticipantesCampanha
             .Include(p => p.Usuario)
             .Where(p => p.CampanhaId == id)
-            .Select(p => new {
+            .Select(p => new
+            {
                 p.Id,
                 p.UsuarioId,
                 NomeUsuario = p.Usuario.Nome,
@@ -533,7 +409,8 @@ public class CampanhasController : ControllerBase
                 TelefoneUsuario = p.Usuario.Telefone,
                 p.Tipo,
                 p.Status,
-                DataInscricao = p.DataEntrada
+                DataInscricao = p.DataEntrada,
+                p.MotivoSaida
             })
             .ToListAsync();
 
@@ -542,102 +419,104 @@ public class CampanhasController : ControllerBase
 
     // POST: api/campanhas/5/participantes/1/advertencia - Enviar advertência a um participante
     [HttpPost("{campanhaId}/participantes/{participanteId}/advertencia")]
+    [Authorize(Policy = Politicas.Moderacao)]
     public async Task<IActionResult> EnviarAdvertencia(int campanhaId, int participanteId, [FromBody] AdvertenciaParticipanteRequest request)
     {
         var participante = await _context.ParticipantesCampanha
-            .Include(p => p.Usuario)
-            .Include(p => p.Campanha)
             .FirstOrDefaultAsync(p => p.Id == participanteId && p.CampanhaId == campanhaId);
 
         if (participante == null)
             return NotFound(new { message = "Participante não encontrado" });
 
-        var moderador = await _context.Usuarios.FindAsync(request.ModeradorId);
-        if (moderador == null || (moderador.Tipo != "moderador" && moderador.Tipo != "admin"))
-            return Unauthorized(new { message = "Apenas moderadores podem enviar advertências" });
-
-        // Criar aviso para o usuário
         var aviso = new AvisoCampanha
         {
             CampanhaId = campanhaId,
             DestinatarioId = participante.UsuarioId,
-            ModeradorId = request.ModeradorId,
+            ModeradorId = User.Id(),
             Titulo = "Advertência",
             Mensagem = request.Mensagem,
-            Tipo = "advertencia",
+            Tipo = TiposAviso.Advertencia,
             DataEnvio = DateTime.UtcNow,
             Lido = false
         };
 
         _context.AvisosCampanha.Add(aviso);
+        _context.Registrar(User.Id(), AcoesAuditadas.Advertencia, ItensAuditados.Usuario, participante.UsuarioId,
+            "Enviou advertência a um participante", request.Mensagem);
         await _context.SaveChangesAsync();
 
-        return Ok(new { 
+        return Ok(new
+        {
             message = "Advertência enviada com sucesso!",
             avisoId = aviso.Id
         });
     }
 
-    // POST: api/campanhas/5/participantes/1/remover - Remover participante da campanha
+    // POST: api/campanhas/5/participantes/1/remover - Remover participante (pelo id da participação)
     [HttpPost("{campanhaId}/participantes/{participanteId}/remover")]
-    public async Task<IActionResult> RemoverParticipanteCampanha(int campanhaId, int participanteId, [FromBody] RemoverParticipanteCampanhaRequest request)
+    [Authorize(Policy = Politicas.Moderacao)]
+    public async Task<IActionResult> RemoverParticipanteCampanha(int campanhaId, int participanteId, [FromBody] MotivoRequest request)
     {
         var participante = await _context.ParticipantesCampanha
-            .Include(p => p.Usuario)
             .Include(p => p.Campanha)
             .FirstOrDefaultAsync(p => p.Id == participanteId && p.CampanhaId == campanhaId);
 
         if (participante == null)
             return NotFound(new { message = "Participante não encontrado" });
 
-        var moderador = await _context.Usuarios.FindAsync(request.ModeradorId);
-        if (moderador == null || (moderador.Tipo != "moderador" && moderador.Tipo != "admin"))
-            return Unauthorized(new { message = "Apenas moderadores podem remover participantes" });
-
-        // Atualizar status do participante
-        participante.Status = "removido";
-        participante.DataSaida = DateTime.UtcNow;
-        participante.MotivoSaida = request.Motivo;
-        participante.RemovidoPorId = request.ModeradorId;
-
-        // Criar aviso para o usuário
-        var aviso = new AvisoCampanha
-        {
-            CampanhaId = campanhaId,
-            DestinatarioId = participante.UsuarioId,
-            ModeradorId = request.ModeradorId,
-            Titulo = "Remoção da Campanha",
-            Mensagem = $"Você foi removido da campanha \"{participante.Campanha.Titulo}\". Motivo: {request.Motivo}",
-            Tipo = "urgente",
-            DataEnvio = DateTime.UtcNow,
-            Lido = false
-        };
-
-        _context.AvisosCampanha.Add(aviso);
+        var aviso = Remover(participante, request.Motivo);
         await _context.SaveChangesAsync();
 
-        return Ok(new { 
+        return Ok(new
+        {
             message = "Participante removido com sucesso!",
             avisoId = aviso.Id
         });
     }
 
-    // GET: api/campanhas/5/chat - Listar mensagens do chat
+    // DELETE: api/campanhas/5/participantes/{usuarioId} - Remover participante (pelo id do usuário)
+    [HttpDelete("{campanhaId}/participantes/{usuarioId}")]
+    [Authorize(Policy = Politicas.Moderacao)]
+    public async Task<IActionResult> RemoverParticipantePorUsuario(int campanhaId, int usuarioId, [FromBody] MotivoRequest request)
+    {
+        var participante = await _context.ParticipantesCampanha
+            .Include(p => p.Campanha)
+            .FirstOrDefaultAsync(p => p.CampanhaId == campanhaId && p.UsuarioId == usuarioId && p.Status == StatusParticipantes.Ativo);
+
+        if (participante == null)
+            return NotFound(new { message = "Participante não encontrado" });
+
+        Remover(participante, request.Motivo);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Participante removido com sucesso" });
+    }
+
+    // GET: api/campanhas/5/chat - Mensagens do chat (participantes, responsável e moderação)
     [HttpGet("{id}/chat")]
     public async Task<IActionResult> GetMensagensChat(int id)
     {
+        var campanha = await _context.Campanhas.FindAsync(id);
+        if (campanha == null)
+            return NotFound(new { message = "Campanha não encontrada" });
+
+        if (!await PodeUsarChatAsync(campanha))
+            return Forbid();
+
         var mensagens = await _context.MensagensChat
-            .Include(m => m.Usuario)
             .Where(m => m.CampanhaId == id && !m.Deletada)
             .OrderBy(m => m.DataEnvio)
-            .Select(m => new {
-                m.Id,
-                m.CampanhaId,
-                m.UsuarioId,
+            .Select(m => new MensagemChatDto
+            {
+                Id = m.Id,
+                CampanhaId = m.CampanhaId,
+                UsuarioId = m.UsuarioId,
                 NomeUsuario = m.Usuario.Nome,
-                m.Conteudo,
-                m.DataEnvio,
-                m.Fixada
+                Conteudo = m.Conteudo,
+                DataEnvio = m.DataEnvio,
+                DataEdicao = m.DataEdicao,
+                Fixada = m.Fixada,
+                FixadaPorNome = m.FixadaPor != null ? m.FixadaPor.Nome : null
             })
             .ToListAsync();
 
@@ -648,32 +527,18 @@ public class CampanhasController : ControllerBase
     [HttpPost("{id}/chat")]
     public async Task<IActionResult> EnviarMensagemChat(int id, [FromBody] EnviarMensagemRequest request)
     {
-        // Verificar se campanha existe
         var campanha = await _context.Campanhas.FindAsync(id);
         if (campanha == null)
             return NotFound(new { message = "Campanha não encontrada" });
 
-        // Verificar se o usuário é participante ou moderador/admin
-        var usuario = await _context.Usuarios.FindAsync(request.UsuarioId);
-        if (usuario == null)
-            return BadRequest(new { message = "Usuário não encontrado" });
-
-        var isModerador = usuario.Tipo == "moderador" || usuario.Tipo == "admin";
-        
-        if (!isModerador)
-        {
-            var isParticipante = await _context.ParticipantesCampanha
-                .AnyAsync(p => p.CampanhaId == id && p.UsuarioId == request.UsuarioId && p.Status == "ativo");
-
-            if (!isParticipante)
-                return Unauthorized(new { message = "Você precisa ser voluntário desta campanha para enviar mensagens" });
-        }
+        if (!await PodeUsarChatAsync(campanha))
+            return StatusCode(403, new { message = "Você precisa ser voluntário desta campanha para enviar mensagens" });
 
         var mensagem = new MensagemChat
         {
             CampanhaId = id,
-            UsuarioId = request.UsuarioId,
-            Conteudo = request.Conteudo,
+            UsuarioId = User.Id(),
+            Conteudo = request.Conteudo.Trim(),
             DataEnvio = DateTime.UtcNow,
             Fixada = false,
             Deletada = false
@@ -682,47 +547,166 @@ public class CampanhasController : ControllerBase
         _context.MensagensChat.Add(mensagem);
         await _context.SaveChangesAsync();
 
-        return Ok(new {
-            mensagem.Id,
-            mensagem.CampanhaId,
-            mensagem.UsuarioId,
-            NomeUsuario = usuario.Nome,
-            mensagem.Conteudo,
-            mensagem.DataEnvio,
-            mensagem.Fixada
+        return Ok(new MensagemChatDto
+        {
+            Id = mensagem.Id,
+            CampanhaId = mensagem.CampanhaId,
+            UsuarioId = mensagem.UsuarioId,
+            NomeUsuario = User.Identity?.Name ?? "",
+            Conteudo = mensagem.Conteudo,
+            DataEnvio = mensagem.DataEnvio,
+            Fixada = mensagem.Fixada
         });
+    }
+
+    // DELETE: api/campanhas/5/chat/10
+    [HttpDelete("{campanhaId}/chat/{mensagemId}")]
+    [Authorize(Policy = Politicas.Moderacao)]
+    public async Task<IActionResult> DeletarMensagem(int campanhaId, int mensagemId)
+    {
+        var mensagem = await _context.MensagensChat
+            .FirstOrDefaultAsync(m => m.Id == mensagemId && m.CampanhaId == campanhaId);
+
+        if (mensagem == null)
+            return NotFound(new { message = "Mensagem não encontrada" });
+
+        mensagem.Deletada = true;
+        _context.Registrar(User.Id(), AcoesAuditadas.MensagemApagada, ItensAuditados.Mensagem, mensagemId,
+            "Apagou uma mensagem do chat", mensagem.Conteudo);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Mensagem deletada com sucesso" });
+    }
+
+    // PUT: api/campanhas/5/chat/10/fixar - Fixa ou desafixa
+    [HttpPut("{campanhaId}/chat/{mensagemId}/fixar")]
+    [Authorize(Policy = Politicas.Moderacao)]
+    public async Task<IActionResult> FixarMensagem(int campanhaId, int mensagemId)
+    {
+        var mensagem = await _context.MensagensChat
+            .FirstOrDefaultAsync(m => m.Id == mensagemId && m.CampanhaId == campanhaId);
+
+        if (mensagem == null)
+            return NotFound(new { message = "Mensagem não encontrada" });
+
+        mensagem.Fixada = !mensagem.Fixada;
+        mensagem.FixadaPorId = mensagem.Fixada ? User.Id() : null;
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = mensagem.Fixada ? "Mensagem fixada" : "Mensagem desafixada" });
+    }
+
+    /// <summary>
+    /// Restringe às regiões atribuídas ao moderador logado. Admin vê tudo.
+    /// Devolve null quando o moderador não tem região nenhuma (não vê nada).
+    /// </summary>
+    private async Task<IQueryable<Campanha>?> FiltrarPorRegiaoDoModeradorAsync(IQueryable<Campanha> query)
+    {
+        if (User.EhAdmin())
+            return query;
+
+        var moderadorId = User.Id();
+        var regioes = await _context.ModeradorRegioes
+            .Where(mr => mr.ModeradorId == moderadorId && mr.Ativo)
+            .Select(mr => mr.RegiaoId)
+            .ToListAsync();
+
+        if (regioes.Count == 0)
+            return null;
+
+        return query.Where(c => c.RegiaoId.HasValue && regioes.Contains(c.RegiaoId.Value));
+    }
+
+    private static readonly string[] StatusEditaveis =
+        { StatusCampanhas.Ativa, StatusCampanhas.Pausada, StatusCampanhas.Finalizada };
+
+    /// <summary>
+    /// O responsável pode pausar ou encerrar a própria campanha; colocar no ar
+    /// (ativa) é decisão da moderação — senão a edição pularia a aprovação.
+    /// </summary>
+    private (int Codigo, string Mensagem)? ValidarMudancaDeStatus(Campanha campanha, string novo)
+    {
+        if (!StatusEditaveis.Contains(novo))
+            return (400, "Status inválido. Use ativa, pausada ou finalizada.");
+
+        if (campanha.Status == StatusCampanhas.Finalizada && !User.EhModerador())
+            return (403, "Campanha finalizada não pode ser reaberta pelo responsável.");
+
+        if (novo == StatusCampanhas.Ativa && !User.EhModerador())
+            return (403, "Só a moderação pode ativar uma campanha.");
+
+        return null;
+    }
+
+    private async Task<IActionResult> MudarStatusAsync(int id, string status, bool ativa, string mensagem, string acao)
+    {
+        var campanha = await _context.Campanhas.FindAsync(id);
+
+        if (campanha == null)
+            return NotFound(new { message = "Campanha não encontrada" });
+
+        campanha.Status = status;
+        campanha.Ativa = ativa;
+        campanha.DataAtualizacao = DateTime.UtcNow;
+        _context.Registrar(User.Id(), acao, ItensAuditados.Campanha, id, $"{mensagem.TrimEnd('!', '.')}: \"{campanha.Titulo}\"");
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = mensagem });
+    }
+
+    private async Task<bool> PodeUsarChatAsync(Campanha campanha)
+    {
+        if (PermissoesCampanha.PodeResponderPor(campanha, User))
+            return true;
+
+        var usuarioId = User.Id();
+        return await _context.ParticipantesCampanha
+            .AnyAsync(p => p.CampanhaId == campanha.Id && p.UsuarioId == usuarioId && p.Status == StatusParticipantes.Ativo);
+    }
+
+    private AvisoCampanha Remover(ParticipanteCampanha participante, string motivo)
+    {
+        participante.Status = StatusParticipantes.Removido;
+        participante.DataSaida = DateTime.UtcNow;
+        participante.MotivoSaida = motivo;
+        participante.RemovidoPorId = User.Id();
+
+        var aviso = new AvisoCampanha
+        {
+            CampanhaId = participante.CampanhaId,
+            DestinatarioId = participante.UsuarioId,
+            ModeradorId = User.Id(),
+            Titulo = "Remoção da Campanha",
+            Mensagem = $"Você foi removido da campanha \"{participante.Campanha.Titulo}\". Motivo: {motivo}",
+            Tipo = TiposAviso.Urgente,
+            DataEnvio = DateTime.UtcNow,
+            Lido = false
+        };
+        _context.AvisosCampanha.Add(aviso);
+        _context.Registrar(User.Id(), AcoesAuditadas.ParticipanteRemovido, ItensAuditados.Usuario, participante.UsuarioId,
+            $"Removeu um participante da campanha \"{participante.Campanha.Titulo}\"", motivo);
+        return aviso;
     }
 }
 
-// DTO para adicionar participante
 public class AdicionarParticipanteRequest
 {
-    public int UsuarioId { get; set; }
     public string? Tipo { get; set; }
 }
 
-// DTO para enviar mensagem
-public class EnviarMensagemRequest
-{
-    public int UsuarioId { get; set; }
-    public string Conteudo { get; set; } = string.Empty;
-}
-
-// DTO para enviar advertência
 public class AdvertenciaParticipanteRequest
 {
-    public int ModeradorId { get; set; }
+    [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Escreva a mensagem da advertência")]
     public string Mensagem { get; set; } = string.Empty;
 }
 
-// DTO para remover participante da campanha
-public class RemoverParticipanteCampanhaRequest
+public class MotivoRequest
 {
-    public int ModeradorId { get; set; }
+    [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Informe o motivo")]
     public string Motivo { get; set; } = string.Empty;
 }
 
-// DTO para delegar campanha
 public class DelegarCampanhaRequest
 {
     public int InstituicaoId { get; set; }

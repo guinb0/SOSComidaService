@@ -3,11 +3,12 @@ using Tesseract;
 
 namespace SOSComida.Services;
 
-public record ResultadoOcr(string Texto, float Confianca);
+/// <param name="Confianca">0–100, ou null quando o provedor não informa.</param>
+public record ResultadoOcr(string Texto, float? Confianca);
 
 public interface IOcrService
 {
-    ResultadoOcr Ler(string caminhoImagem);
+    Task<ResultadoOcr> LerAsync(string caminhoImagem, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -18,7 +19,11 @@ public interface IOcrService
 /// </summary>
 public class TesseractOcrService : IOcrService, IDisposable
 {
-    private readonly TesseractEngine _engine;
+    // Criado só na primeira leitura. Se a lib nativa do Tesseract faltar (ex.:
+    // container Linux sem libtesseract), o erro fica restrito ao envio de nota
+    // — que já trata falha de OCR — em vez de derrubar a injeção do controller
+    // e levar junto a listagem das notas.
+    private readonly Lazy<TesseractEngine> _engine;
     private readonly ILogger<TesseractOcrService> _logger;
 
     // O engine do Tesseract não é thread-safe e este serviço é singleton.
@@ -33,14 +38,22 @@ public class TesseractOcrService : IOcrService, IDisposable
 
         // "por+eng": nota fiscal brasileira mistura português com siglas e
         // cabeçalhos em inglês, e o modelo de inglês ajuda nos números.
-        _engine = new TesseractEngine(tessdata, "por+eng", EngineMode.Default);
+        _engine = new Lazy<TesseractEngine>(() =>
+        {
+            var engine = new TesseractEngine(tessdata, "por+eng", EngineMode.Default);
 
-        // Cupom fiscal é um bloco único de texto em coluna. Sem isto o
-        // Tesseract tenta detectar colunas e embaralha as linhas.
-        _engine.DefaultPageSegMode = PageSegMode.SingleBlock;
+            // Cupom fiscal é um bloco único de texto em coluna. Sem isto o
+            // Tesseract tenta detectar colunas e embaralha as linhas.
+            engine.DefaultPageSegMode = PageSegMode.SingleBlock;
+            return engine;
+        });
     }
 
-    public ResultadoOcr Ler(string caminhoImagem)
+    // Tesseract é síncrono e pesado: roda fora da thread da requisição.
+    public Task<ResultadoOcr> LerAsync(string caminhoImagem, CancellationToken ct = default) =>
+        Task.Run(() => Ler(caminhoImagem), ct);
+
+    private ResultadoOcr Ler(string caminhoImagem)
     {
         // Foto de celular vem grande e colorida; o Tesseract vai muito melhor
         // com a imagem em tons de cinza e reduzida.
@@ -51,7 +64,7 @@ public class TesseractOcrService : IOcrService, IDisposable
         try
         {
             using var pix = Pix.LoadFromMemory(data.ToArray());
-            using var page = _engine.Process(pix);
+            using var page = _engine.Value.Process(pix);
 
             var texto = page.GetText() ?? string.Empty;
             var confianca = page.GetMeanConfidence() * 100f;
@@ -107,7 +120,7 @@ public class TesseractOcrService : IOcrService, IDisposable
 
     public void Dispose()
     {
-        _engine.Dispose();
+        if (_engine.IsValueCreated) _engine.Value.Dispose();
         _semaforo.Dispose();
     }
 }

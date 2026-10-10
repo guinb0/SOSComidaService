@@ -1,12 +1,16 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SOSComida.Data;
 using SOSComida.Models;
+using SOSComida.Seguranca;
+using SOSComida.Services;
 
 namespace SOSComida.Controllers;
 
 [ApiController]
 [Route("api/instituicoes")]
+[Authorize(Policy = Politicas.Moderacao)]
 public class InstituicoesController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
@@ -21,7 +25,7 @@ public class InstituicoesController : ControllerBase
     public async Task<IActionResult> GetInstituicoes([FromQuery] string? status = null)
     {
         var query = _context.Usuarios
-            .Where(u => u.Tipo == "instituicao")
+            .Where(u => u.Tipo == TiposUsuario.Instituicao)
             .Include(u => u.RegiaoAdministrativa)
             .AsQueryable();
 
@@ -64,7 +68,7 @@ public class InstituicoesController : ControllerBase
     public async Task<IActionResult> GetInstituicoesPendentes()
     {
         var instituicoes = await _context.Usuarios
-            .Where(u => u.Tipo == "instituicao" && u.StatusAprovacao == "pendente")
+            .Where(u => u.Tipo == TiposUsuario.Instituicao && u.StatusAprovacao == StatusAprovacoes.Pendente)
             .Include(u => u.RegiaoAdministrativa)
             .OrderBy(u => u.DataCriacao)
             .Select(u => new
@@ -100,7 +104,7 @@ public class InstituicoesController : ControllerBase
     public async Task<IActionResult> GetInstituicao(int id)
     {
         var instituicao = await _context.Usuarios
-            .Where(u => u.Id == id && u.Tipo == "instituicao")
+            .Where(u => u.Id == id && u.Tipo == TiposUsuario.Instituicao)
             .Include(u => u.RegiaoAdministrativa)
             .Include(u => u.AprovadoPor)
             .Select(u => new
@@ -138,31 +142,26 @@ public class InstituicoesController : ControllerBase
 
     // POST: api/instituicoes/{id}/aprovar - Aprovar uma instituição
     [HttpPost("{id}/aprovar")]
-    public async Task<IActionResult> AprovarInstituicao(int id, [FromBody] AprovarInstituicaoRequest request)
+    public async Task<IActionResult> AprovarInstituicao(int id)
     {
         var instituicao = await _context.Usuarios.FindAsync(id);
 
-        if (instituicao == null || instituicao.Tipo != "instituicao")
+        if (instituicao == null || instituicao.Tipo != TiposUsuario.Instituicao)
         {
             return NotFound(new { message = "Instituição não encontrada" });
         }
 
-        if (instituicao.StatusAprovacao == "aprovado")
+        if (instituicao.StatusAprovacao == StatusAprovacoes.Aprovado)
         {
             return BadRequest(new { message = "Esta instituição já está aprovada" });
         }
 
-        // Verificar se o moderador existe
-        var moderador = await _context.Usuarios.FindAsync(request.ModeradorId);
-        if (moderador == null || (moderador.Tipo != "moderador" && moderador.Tipo != "admin"))
-        {
-            return BadRequest(new { message = "Moderador inválido" });
-        }
-
-        instituicao.StatusAprovacao = "aprovado";
+        instituicao.StatusAprovacao = StatusAprovacoes.Aprovado;
         instituicao.DataAprovacao = DateTime.UtcNow;
-        instituicao.AprovadoPorId = request.ModeradorId;
+        instituicao.AprovadoPorId = User.Id();
         instituicao.MotivoRejeicao = null;
+        _context.Registrar(User.Id(), AcoesAuditadas.InstituicaoAprovada, ItensAuditados.Usuario, id,
+            $"Aprovou a instituição {instituicao.NomeInstituicao ?? instituicao.Nome}");
 
         await _context.SaveChangesAsync();
 
@@ -175,7 +174,7 @@ public class InstituicoesController : ControllerBase
     {
         var instituicao = await _context.Usuarios.FindAsync(id);
 
-        if (instituicao == null || instituicao.Tipo != "instituicao")
+        if (instituicao == null || instituicao.Tipo != TiposUsuario.Instituicao)
         {
             return NotFound(new { message = "Instituição não encontrada" });
         }
@@ -185,10 +184,12 @@ public class InstituicoesController : ControllerBase
             return BadRequest(new { message = "É necessário informar o motivo da rejeição" });
         }
 
-        instituicao.StatusAprovacao = "rejeitado";
+        instituicao.StatusAprovacao = StatusAprovacoes.Rejeitado;
         instituicao.MotivoRejeicao = request.Motivo;
         instituicao.DataAprovacao = DateTime.UtcNow;
-        instituicao.AprovadoPorId = request.ModeradorId;
+        instituicao.AprovadoPorId = User.Id();
+        _context.Registrar(User.Id(), AcoesAuditadas.InstituicaoRejeitada, ItensAuditados.Usuario, id,
+            $"Rejeitou a instituição {instituicao.NomeInstituicao ?? instituicao.Nome}", request.Motivo);
 
         await _context.SaveChangesAsync();
 
@@ -197,10 +198,11 @@ public class InstituicoesController : ControllerBase
 
     // GET: api/instituicoes/aprovadas - Listar instituições aprovadas (para delegar campanhas)
     [HttpGet("aprovadas")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetInstituicoesAprovadas([FromQuery] int? regiaoId = null)
     {
         var query = _context.Usuarios
-            .Where(u => u.Tipo == "instituicao" && u.StatusAprovacao == "aprovado")
+            .Where(u => u.Tipo == TiposUsuario.Instituicao && u.StatusAprovacao == StatusAprovacoes.Aprovado)
             .Include(u => u.RegiaoAdministrativa)
             .AsQueryable();
 
@@ -230,13 +232,7 @@ public class InstituicoesController : ControllerBase
     }
 }
 
-public class AprovarInstituicaoRequest
-{
-    public int ModeradorId { get; set; }
-}
-
 public class RejeitarInstituicaoRequest
 {
-    public int ModeradorId { get; set; }
     public string Motivo { get; set; } = string.Empty;
 }

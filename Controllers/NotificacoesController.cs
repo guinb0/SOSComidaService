@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SOSComida.Data;
 using SOSComida.Models;
+using SOSComida.Seguranca;
 
 namespace SOSComida.Controllers;
 
@@ -20,6 +21,9 @@ public class NotificacoesController : ControllerBase
     [HttpGet("usuario/{usuarioId}")]
     public async Task<IActionResult> GetNotificacoesUsuario(int usuarioId)
     {
+        if (usuarioId != User.Id())
+            return Forbid();
+
         var notificacoes = await _context.Notificacoes
             .Include(n => n.Campanha)
             .Where(n => n.UsuarioId == usuarioId)
@@ -47,7 +51,7 @@ public class NotificacoesController : ControllerBase
     public async Task<IActionResult> MarcarComoLida(int id)
     {
         var notificacao = await _context.Notificacoes.FindAsync(id);
-        if (notificacao == null)
+        if (notificacao == null || notificacao.UsuarioId != User.Id())
             return NotFound(new { message = "Notificação não encontrada" });
 
         notificacao.Lida = true;
@@ -60,6 +64,9 @@ public class NotificacoesController : ControllerBase
     [HttpPut("usuario/{usuarioId}/marcar-todas-lidas")]
     public async Task<IActionResult> MarcarTodasComoLidas(int usuarioId)
     {
+        if (usuarioId != User.Id())
+            return Forbid();
+
         var notificacoes = await _context.Notificacoes
             .Where(n => n.UsuarioId == usuarioId && !n.Lida)
             .ToListAsync();
@@ -82,16 +89,16 @@ public class NotificacoesController : ControllerBase
             .Include(n => n.Campanha)
             .FirstOrDefaultAsync(n => n.Id == id);
 
-        if (notificacao == null)
+        if (notificacao == null || notificacao.UsuarioId != User.Id())
             return NotFound(new { message = "Notificação não encontrada" });
 
-        if (notificacao.Tipo != "delegacao_campanha")
+        if (notificacao.Tipo != TiposNotificacao.DelegacaoCampanha)
             return BadRequest(new { message = "Esta notificação não é uma delegação" });
 
-        if (notificacao.StatusDelegacao != "pendente")
+        if (notificacao.StatusDelegacao != StatusDelegacoes.Pendente)
             return BadRequest(new { message = "Esta delegação já foi respondida" });
 
-        notificacao.StatusDelegacao = request.Aceitar ? "aceita" : "recusada";
+        notificacao.StatusDelegacao = request.Aceitar ? StatusDelegacoes.Aceita : StatusDelegacoes.Recusada;
         notificacao.Lida = true;
 
         if (notificacao.CampanhaId != null)
@@ -101,16 +108,16 @@ public class NotificacoesController : ControllerBase
             {
                 if (request.Aceitar)
                 {
-                    campanha.StatusDelegacao = "aceita";
-                    campanha.Status = "ativa";
+                    campanha.StatusDelegacao = StatusDelegacoes.Aceita;
+                    campanha.Status = StatusCampanhas.Ativa;
                     campanha.Ativa = true;
                 }
                 else
                 {
-                    campanha.StatusDelegacao = "recusada";
+                    campanha.StatusDelegacao = StatusDelegacoes.Recusada;
                     campanha.InstituicaoId = null;
                     // Volta para pendente se a instituição recusou
-                    campanha.Status = "pendente";
+                    campanha.Status = StatusCampanhas.Pendente;
                 }
                 campanha.DataAtualizacao = DateTime.UtcNow;
             }
@@ -126,13 +133,13 @@ public class NotificacoesController : ControllerBase
                 var novaNotificacao = new Notificacao
                 {
                     UsuarioId = campanha.UsuarioId.Value,
-                    Tipo = "resposta_delegacao",
+                    Tipo = TiposNotificacao.RespostaDelegacao,
                     Titulo = request.Aceitar ? "Campanha aceita pela instituição!" : "Instituição recusou sua campanha",
                     Mensagem = request.Aceitar 
                         ? $"A instituição {instituicao?.Nome} aceitou gerenciar sua campanha '{campanha.Titulo}'."
                         : $"A instituição {instituicao?.Nome} recusou gerenciar sua campanha '{campanha.Titulo}'. A campanha voltou para análise.",
                     CampanhaId = campanha.Id,
-                    StatusDelegacao = request.Aceitar ? "aceita" : "recusada"
+                    StatusDelegacao = request.Aceitar ? StatusDelegacoes.Aceita : StatusDelegacoes.Recusada
                 };
                 _context.Notificacoes.Add(novaNotificacao);
             }

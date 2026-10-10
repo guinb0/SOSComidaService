@@ -124,6 +124,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Tipo).HasMaxLength(50);
             entity.Property(e => e.Status).HasMaxLength(50);
             entity.Property(e => e.Descricao).HasMaxLength(500);
+            entity.Property(e => e.MetodoPagamento).HasMaxLength(30);
 
             entity.HasOne(e => e.Usuario)
                   .WithMany()

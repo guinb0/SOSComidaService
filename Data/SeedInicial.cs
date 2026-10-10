@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SOSComida.Models;
+using SOSComida.Seguranca;
 
 namespace SOSComida.Data;
 
@@ -8,10 +9,6 @@ namespace SOSComida.Data;
 ///
 /// Só roda quando o banco está vazio — nunca sobrescreve o que você já criou
 /// testando. Para começar do zero, apague o arquivo soscomida.db e suba de novo.
-///
-/// As senhas ficam em texto puro porque é assim que o AuthController compara
-/// hoje (`u.Senha == request.Senha`). Não é o certo, e vale trocar por hash
-/// antes de qualquer coisa ir para produção.
 /// </summary>
 public static class SeedInicial
 {
@@ -27,6 +24,7 @@ public static class SeedInicial
     public static async Task ExecutarAsync(ApplicationDbContext ctx)
     {
         await ctx.Database.MigrateAsync();
+        await ConverterSenhasEmTextoPuroAsync(ctx);
 
         if (await ctx.Usuarios.AnyAsync()) return;
 
@@ -50,31 +48,31 @@ public static class SeedInicial
         // --- Usuários ---
         var admin = new Usuario
         {
-            Nome = "Guilherme Admin", Email = "guinb@soscomida.com", Senha = "admin123",
+            Nome = "Guilherme Admin", Email = "guinb@soscomida.com", Senha = SenhaService.Hash("admin123"),
             Telefone = "(61) 99999-0003", Endereco = "SQN 210, Bloco A", Cidade = "Brasília",
             Cpf = "98765432100", Tipo = "admin", SenhaTemporaria = false, DataCriacao = agora.AddMonths(-8),
         };
         var moderador = new Usuario
         {
-            Nome = "Renata Moreira", Email = "moderador@teste.com", Senha = "teste123",
+            Nome = "Renata Moreira", Email = "moderador@teste.com", Senha = SenhaService.Hash("teste123"),
             Telefone = "(61) 99999-0004", Endereco = "QNM 34, Conjunto F", Cidade = "Brasília",
             Cpf = "11122233344", Tipo = "moderador", SenhaTemporaria = false, DataCriacao = agora.AddMonths(-6),
         };
         var doador = new Usuario
         {
-            Nome = "Marcos Vinícius", Email = "doador@teste.com", Senha = "teste123",
+            Nome = "Marcos Vinícius", Email = "doador@teste.com", Senha = SenhaService.Hash("teste123"),
             Telefone = "(61) 99999-0001", Endereco = "SQS 308, Bloco C", Cidade = "Brasília",
             Cpf = "12345678901", Tipo = "usuario", SenhaTemporaria = false, DataCriacao = agora.AddMonths(-4),
         };
         var doadora2 = new Usuario
         {
-            Nome = "Juliana Prado", Email = "juliana@teste.com", Senha = "teste123",
+            Nome = "Juliana Prado", Email = "juliana@teste.com", Senha = SenhaService.Hash("teste123"),
             Telefone = "(61) 99999-0005", Endereco = "QI 25, Lago Sul", Cidade = "Brasília",
             Cpf = "22233344455", Tipo = "usuario", SenhaTemporaria = false, DataCriacao = agora.AddMonths(-3),
         };
         var instituicao = new Usuario
         {
-            Nome = "Casa de Apoio Esperança", Email = "instituicao@teste.com", Senha = "teste123",
+            Nome = "Casa de Apoio Esperança", Email = "instituicao@teste.com", Senha = SenhaService.Hash("teste123"),
             Telefone = "(61) 3333-0002", Endereco = "QNN 14, Área Especial", Cidade = "Brasília",
             Tipo = "instituicao", SenhaTemporaria = false, DataCriacao = agora.AddMonths(-5),
             Cnpj = "12.345.678/0001-99", NomeInstituicao = "Casa de Apoio Esperança",
@@ -84,7 +82,7 @@ public static class SeedInicial
         };
         var instituicaoPendente = new Usuario
         {
-            Nome = "Instituto Semear", Email = "semear@teste.com", Senha = "teste123",
+            Nome = "Instituto Semear", Email = "semear@teste.com", Senha = SenhaService.Hash("teste123"),
             Telefone = "(61) 3333-0007", Endereco = "QR 415, Samambaia Norte", Cidade = "Brasília",
             Tipo = "instituicao", SenhaTemporaria = false, DataCriacao = agora.AddDays(-6),
             Cnpj = "98.765.432/0001-11", NomeInstituicao = "Instituto Semear",
@@ -93,7 +91,7 @@ public static class SeedInicial
         };
         var familia1 = new Usuario
         {
-            Nome = "Dona Marlene", Email = "marlene@teste.com", Senha = "teste123",
+            Nome = "Dona Marlene", Email = "marlene@teste.com", Senha = SenhaService.Hash("teste123"),
             Telefone = "(61) 98888-1111", Endereco = "QNP 22, Conjunto D", Cidade = "Brasília",
             Cpf = "33344455566", Tipo = "usuario", SenhaTemporaria = false, DataCriacao = agora.AddMonths(-2),
         };
@@ -269,6 +267,22 @@ public static class SeedInicial
                 TextoOcr = "HORTIFRUT1 DA FE1RA\nBATATA 20KG\nCEB0LA 10KG\nT0TAL 156,OO",
             }
         );
+
+        await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Bancos criados antes do hash guardavam a senha em texto puro. Converte
+    /// essas linhas uma vez, no arranque, para que ninguém perca o acesso.
+    /// </summary>
+    private static async Task ConverterSenhasEmTextoPuroAsync(ApplicationDbContext ctx)
+    {
+        var usuarios = await ctx.Usuarios.ToListAsync();
+        var pendentes = usuarios.Where(u => !string.IsNullOrEmpty(u.Senha) && !SenhaService.EhHash(u.Senha)).ToList();
+        if (pendentes.Count == 0) return;
+
+        foreach (var u in pendentes)
+            u.Senha = SenhaService.Hash(u.Senha);
 
         await ctx.SaveChangesAsync();
     }

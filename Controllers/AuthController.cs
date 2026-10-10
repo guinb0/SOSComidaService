@@ -1,9 +1,13 @@
+using System.Security.Cryptography;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using SOSComida.Data;
 using SOSComida.Models;
 using SOSComida.DTOs.Requests;
 using SOSComida.DTOs.Responses;
+using SOSComida.Seguranca;
 using SOSComida.Services;
 
 namespace SOSComida.Controllers;
@@ -12,70 +16,83 @@ namespace SOSComida.Controllers;
 [Route("auth")]
 public class AuthController : ControllerBase
 {
+    private static readonly TimeSpan ValidadeSenhaRecuperacao = TimeSpan.FromHours(1);
+
     private readonly ApplicationDbContext _context;
     private readonly IEmailService _emailService;
+    private readonly IRecaptchaService _recaptcha;
+    private readonly TokenService _tokens;
 
-    public AuthController(ApplicationDbContext context, IEmailService emailService)
+    public AuthController(
+        ApplicationDbContext context,
+        IEmailService emailService,
+        IRecaptchaService recaptcha,
+        TokenService tokens)
     {
         _context = context;
         _emailService = emailService;
+        _recaptcha = recaptcha;
+        _tokens = tokens;
     }
 
-    private string GerarSenhaTemporaria(int tamanho = 8)
+    private static string GerarSenhaTemporaria(int tamanho = 10)
     {
         const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-        var random = new Random();
-        return new string(Enumerable.Repeat(chars, tamanho)
-            .Select(s => s[random.Next(s.Length)]).ToArray());
+        return RandomNumberGenerator.GetString(chars, tamanho);
     }
 
     [HttpPost("login")]
+    [AllowAnonymous]
+    [EnableRateLimiting(LimitesDeTaxa.Autenticacao)]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        // Buscar usuário no banco
-        var usuario = await _context.Usuarios
-            .FirstOrDefaultAsync(u => u.Email == request.Email && u.Senha == request.Senha);
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        if (!await _recaptcha.ValidarAsync(request.RecaptchaToken, ip))
+            return BadRequest(new { message = "Confirme o CAPTCHA para entrar" });
 
-        if (usuario != null)
+        var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Email == request.Email);
+        if (usuario == null)
+            return Unauthorized(new { message = "Usuário ou senha inválidos" });
+
+        if (!usuario.Ativo)
+            return Unauthorized(new { message = "Esta conta está desativada" });
+
+        var usouRecuperacao = false;
+        if (!SenhaService.Confere(usuario.Senha, request.Senha))
         {
-            var response = new LoginResponse
-            {
-                Token = $"mock-jwt-token-{usuario.Id}-{Guid.NewGuid().ToString()[..8]}",
-                Usuario = usuario,
-                SenhaTemporaria = usuario.SenhaTemporaria
-            };
-            return Ok(response);
+            usouRecuperacao = SenhaRecuperacaoValida(usuario, request.Senha);
+            if (!usouRecuperacao)
+                return Unauthorized(new { message = "Usuário ou senha inválidos" });
         }
 
-        return Unauthorized(new { message = "Usuário ou senha inválidos" });
+        return Ok(new LoginResponse
+        {
+            Token = _tokens.Gerar(usuario),
+            Usuario = UsuarioDto.De(usuario),
+            SenhaTemporaria = usuario.SenhaTemporaria || usouRecuperacao
+        });
     }
 
     [HttpPost("register")]
+    [AllowAnonymous]
+    [EnableRateLimiting(LimitesDeTaxa.Autenticacao)]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
-        // Verificar se email já existe
         var existeEmail = await _context.Usuarios.AnyAsync(u => u.Email == request.Email);
         if (existeEmail)
         {
             return BadRequest(new { message = "Este email já está cadastrado" });
         }
 
-        // Validar senha
-        if (string.IsNullOrEmpty(request.Senha) || request.Senha.Length < 6)
-        {
-            return BadRequest(new { message = "A senha deve ter pelo menos 6 caracteres" });
-        }
-
         // Validações específicas para instituições
-        var isInstituicao = request.Tipo == "instituicao";
+        var isInstituicao = request.Tipo == TiposUsuario.Instituicao;
         if (isInstituicao)
         {
             if (!request.RegiaoAdministrativaId.HasValue)
             {
                 return BadRequest(new { message = "Instituições devem selecionar uma região administrativa" });
             }
-            
-            // Verificar se a região existe
+
             var regiaoExiste = await _context.RegioesAdministrativas
                 .AnyAsync(r => r.Id == request.RegiaoAdministrativaId && r.Ativa);
             if (!regiaoExiste)
@@ -89,35 +106,35 @@ public class AuthController : ControllerBase
             }
         }
 
-        // Criar novo usuário com a senha fornecida
+        // O tipo nunca vem do cliente além de "usuario"/"instituicao": sem isso
+        // daria para se cadastrar direto como moderador ou admin.
         var novoUsuario = new Usuario
         {
             Nome = request.Nome,
             Email = request.Email,
-            Senha = request.Senha,
+            Senha = SenhaService.Hash(request.Senha),
             Telefone = request.Telefone ?? "",
             Endereco = request.Endereco ?? "",
             Cidade = request.Cidade ?? "",
-            Cpf = isInstituicao ? null : request.Cpf, // CPF apenas para pessoas físicas
-            Tipo = isInstituicao ? "instituicao" : "usuario",
+            Cpf = isInstituicao ? null : request.Cpf,
+            Tipo = isInstituicao ? TiposUsuario.Instituicao : TiposUsuario.Usuario,
             SenhaTemporaria = false,
             DataCriacao = DateTime.UtcNow,
-            // Campos de instituição
             Cnpj = isInstituicao ? request.Cnpj : null,
             RegiaoAdministrativaId = isInstituicao ? request.RegiaoAdministrativaId : null,
             NomeInstituicao = isInstituicao ? request.NomeInstituicao : null,
             DescricaoInstituicao = isInstituicao ? request.DescricaoInstituicao : null,
-            StatusAprovacao = isInstituicao ? "pendente" : "nao_aplicavel"
+            StatusAprovacao = isInstituicao ? StatusAprovacoes.Pendente : StatusAprovacoes.NaoAplicavel
         };
 
         _context.Usuarios.Add(novoUsuario);
         await _context.SaveChangesAsync();
 
-        var mensagem = isInstituicao 
+        var mensagem = isInstituicao
             ? "Cadastro realizado! Sua instituição será analisada pelos moderadores. Recomendamos usar um email corporativo para facilitar a validação."
             : "Usuário criado com sucesso! Você já pode fazer login.";
 
-        return Ok(new { 
+        return Ok(new {
             message = mensagem,
             email = request.Email,
             usuario = new
@@ -133,49 +150,63 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("alterar-senha")]
+    [EnableRateLimiting(LimitesDeTaxa.Autenticacao)]
     public async Task<IActionResult> AlterarSenha([FromBody] AlterarSenhaRequest request)
     {
-        var usuario = await _context.Usuarios
-            .FirstOrDefaultAsync(u => u.Id == request.UsuarioId && u.Senha == request.SenhaAtual);
-
+        var usuario = await _context.Usuarios.FindAsync(User.Id());
         if (usuario == null)
+            return Unauthorized();
+
+        var senhaAtualConfere = SenhaService.Confere(usuario.Senha, request.SenhaAtual)
+                                || SenhaRecuperacaoValida(usuario, request.SenhaAtual);
+        if (!senhaAtualConfere)
         {
             return BadRequest(new { message = "Senha atual incorreta" });
         }
 
-        usuario.Senha = request.NovaSenha;
+        usuario.Senha = SenhaService.Hash(request.NovaSenha);
         usuario.SenhaTemporaria = false;
+        usuario.SenhaRecuperacaoHash = null;
+        usuario.SenhaRecuperacaoExpiraEm = null;
         await _context.SaveChangesAsync();
 
         return Ok(new { message = "Senha alterada com sucesso!" });
     }
 
+    /// <summary>
+    /// Gera uma senha temporária com validade curta, sem mexer na senha atual.
+    /// Antes a senha era trocada na hora: qualquer pessoa que soubesse um
+    /// e-mail cadastrado conseguia derrubar a senha do dono.
+    /// </summary>
     [HttpPost("reenviar-senha")]
+    [AllowAnonymous]
+    [EnableRateLimiting(LimitesDeTaxa.Autenticacao)]
     public async Task<IActionResult> ReenviarSenha([FromBody] ReenviarSenhaRequest request)
     {
-        var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Email == request.Email);
+        const string resposta = "Se o email estiver cadastrado, uma senha temporária será enviada.";
 
+        var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Email == request.Email);
         if (usuario == null)
         {
-            // Não revelar se o email existe ou não
-            return Ok(new { message = "Se o email estiver cadastrado, uma nova senha será enviada." });
+            return Ok(new { message = resposta });
         }
 
-        // Gerar nova senha temporária
-        var novaSenha = GerarSenhaTemporaria();
-        usuario.Senha = novaSenha;
-        usuario.SenhaTemporaria = true;
+        var senhaTemporaria = GerarSenhaTemporaria();
+        usuario.SenhaRecuperacaoHash = SenhaService.Hash(senhaTemporaria);
+        usuario.SenhaRecuperacaoExpiraEm = DateTime.UtcNow.Add(ValidadeSenhaRecuperacao);
         await _context.SaveChangesAsync();
 
-        // Enviar email
-        await _emailService.EnviarEmailBoasVindas(usuario.Email, usuario.Nome, novaSenha);
+        await _emailService.EnviarSenhaRecuperacao(usuario.Email, usuario.Nome, senhaTemporaria, ValidadeSenhaRecuperacao);
 
-        return Ok(new { message = "Se o email estiver cadastrado, uma nova senha será enviada." });
+        return Ok(new { message = resposta });
     }
 
     [HttpPut("perfil/{id}")]
     public async Task<IActionResult> AtualizarPerfil(int id, [FromBody] AtualizarPerfilRequest request)
     {
+        if (id != User.Id())
+            return Forbid();
+
         var usuario = await _context.Usuarios.FindAsync(id);
         if (usuario == null)
         {
@@ -188,12 +219,16 @@ public class AuthController : ControllerBase
         if (!string.IsNullOrEmpty(request.Endereco)) usuario.Endereco = request.Endereco;
 
         await _context.SaveChangesAsync();
-        return Ok(usuario);
+        return Ok(UsuarioDto.De(usuario));
     }
 
     [HttpPost("perfil/{id}/foto")]
+    [RequestSizeLimit(TamanhoMaximoFoto + 64 * 1024)]
     public async Task<IActionResult> UploadFoto(int id, IFormFile foto)
     {
+        if (id != User.Id())
+            return Forbid();
+
         var usuario = await _context.Usuarios.FindAsync(id);
         if (usuario == null)
         {
@@ -205,46 +240,21 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Nenhuma imagem enviada" });
         }
 
-        // Validar tipo de arquivo
-        var allowedTypes = new[] { "image/jpeg", "image/png", "image/gif", "image/webp" };
-        if (!allowedTypes.Contains(foto.ContentType.ToLower()))
-        {
-            return BadRequest(new { message = "Tipo de arquivo não permitido. Use JPG, PNG, GIF ou WebP." });
-        }
-
-        // Validar tamanho (máx 5MB)
-        if (foto.Length > 5 * 1024 * 1024)
+        if (foto.Length > TamanhoMaximoFoto)
         {
             return BadRequest(new { message = "A imagem deve ter no máximo 5MB" });
         }
 
-        // Criar pasta de uploads se não existir
-        var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "fotos");
-        Directory.CreateDirectory(uploadsFolder);
-
-        // Gerar nome único para o arquivo
-        var extension = Path.GetExtension(foto.FileName);
-        var fileName = $"{id}_{Guid.NewGuid()}{extension}";
-        var filePath = Path.Combine(uploadsFolder, fileName);
-
-        // Deletar foto anterior se existir
-        if (!string.IsNullOrEmpty(usuario.FotoUrl))
+        var extensao = await ImagemUpload.DetectarExtensaoAsync(foto);
+        if (extensao == null)
         {
-            var oldPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", usuario.FotoUrl.TrimStart('/'));
-            if (System.IO.File.Exists(oldPath))
-            {
-                System.IO.File.Delete(oldPath);
-            }
+            return BadRequest(new { message = "Tipo de arquivo não permitido. Use JPG, PNG, GIF ou WebP." });
         }
 
-        // Salvar nova foto
-        using (var stream = new FileStream(filePath, FileMode.Create))
-        {
-            await foto.CopyToAsync(stream);
-        }
+        var (url, _) = await ImagemUpload.SalvarAsync(foto, extensao, "fotos", id.ToString());
 
-        // Atualizar URL no banco
-        usuario.FotoUrl = $"/uploads/fotos/{fileName}";
+        ImagemUpload.Apagar(usuario.FotoUrl);
+        usuario.FotoUrl = url;
         await _context.SaveChangesAsync();
 
         return Ok(new { fotoUrl = usuario.FotoUrl, message = "Foto atualizada com sucesso!" });
@@ -253,26 +263,27 @@ public class AuthController : ControllerBase
     [HttpDelete("perfil/{id}/foto")]
     public async Task<IActionResult> RemoverFoto(int id)
     {
+        if (id != User.Id())
+            return Forbid();
+
         var usuario = await _context.Usuarios.FindAsync(id);
         if (usuario == null)
         {
             return NotFound(new { message = "Usuário não encontrado" });
         }
 
-        if (!string.IsNullOrEmpty(usuario.FotoUrl))
-        {
-            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", usuario.FotoUrl.TrimStart('/'));
-            if (System.IO.File.Exists(filePath))
-            {
-                System.IO.File.Delete(filePath);
-            }
-        }
-
+        ImagemUpload.Apagar(usuario.FotoUrl);
         usuario.FotoUrl = null;
         await _context.SaveChangesAsync();
 
         return Ok(new { message = "Foto removida com sucesso!" });
     }
+
+    private const long TamanhoMaximoFoto = 5 * 1024 * 1024;
+
+    private static bool SenhaRecuperacaoValida(Usuario usuario, string senha) =>
+        usuario.SenhaRecuperacaoExpiraEm > DateTime.UtcNow
+        && SenhaService.Confere(usuario.SenhaRecuperacaoHash, senha);
 }
 
 public class AtualizarPerfilRequest

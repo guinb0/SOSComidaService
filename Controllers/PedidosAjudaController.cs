@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SOSComida.Data;
 using SOSComida.Models;
+using SOSComida.Seguranca;
 
 namespace SOSComida.Controllers;
 
@@ -34,7 +36,7 @@ public class PedidosAjudaController : ControllerBase
         // Filtrar apenas pedidos ativos (não cancelados)
         if (string.IsNullOrEmpty(status))
         {
-            query = query.Where(p => p.Status != "cancelado");
+            query = query.Where(p => p.Status != StatusPedidos.Cancelado);
         }
         else
         {
@@ -54,7 +56,7 @@ public class PedidosAjudaController : ControllerBase
         var total = await query.CountAsync();
 
         var pedidos = await query
-            .OrderByDescending(p => p.Urgencia == "critica" ? 4 : p.Urgencia == "alta" ? 3 : p.Urgencia == "media" ? 2 : 1)
+            .OrderByDescending(p => p.Urgencia == UrgenciasPedido.Critica ? 4 : p.Urgencia == UrgenciasPedido.Alta ? 3 : p.Urgencia == UrgenciasPedido.Media ? 2 : 1)
             .ThenByDescending(p => p.DataCriacao)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -124,6 +126,9 @@ public class PedidosAjudaController : ControllerBase
     [HttpGet("meus/{usuarioId}")]
     public async Task<IActionResult> GetMeusPedidos(int usuarioId)
     {
+        if (usuarioId != User.Id())
+            return Forbid();
+
         var pedidos = await _context.PedidosAjuda
             .Where(p => p.UsuarioId == usuarioId)
             .Include(p => p.Regiao)
@@ -151,13 +156,6 @@ public class PedidosAjudaController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> CreatePedido([FromBody] CreatePedidoAjudaRequest request)
     {
-        // Validar usuário
-        var usuario = await _context.Usuarios.FindAsync(request.UsuarioId);
-        if (usuario == null)
-        {
-            return BadRequest(new { message = "Usuário não encontrado" });
-        }
-
         // Validar região se informada
         if (request.RegiaoId.HasValue)
         {
@@ -174,13 +172,13 @@ public class PedidosAjudaController : ControllerBase
             Titulo = request.Titulo,
             Descricao = request.Descricao,
             Localizacao = request.Localizacao,
-            Urgencia = request.Urgencia ?? "media",
-            Status = "pendente",
+            Urgencia = request.Urgencia ?? UrgenciasPedido.Media,
+            Status = StatusPedidos.Pendente,
             QuantidadePessoas = request.QuantidadePessoas > 0 ? request.QuantidadePessoas : 1,
             TipoAjuda = request.TipoAjuda,
             Telefone = request.Telefone,
             Observacoes = request.Observacoes,
-            UsuarioId = request.UsuarioId,
+            UsuarioId = User.Id(),
             RegiaoId = request.RegiaoId,
             DataCriacao = DateTime.UtcNow
         };
@@ -207,13 +205,13 @@ public class PedidosAjudaController : ControllerBase
         }
 
         // Verificar se o usuário é o dono do pedido
-        if (pedido.UsuarioId != request.UsuarioId)
+        if (pedido.UsuarioId != User.Id())
         {
-            return Unauthorized(new { message = "Você não tem permissão para editar este pedido" });
+            return StatusCode(403, new { message = "Você não tem permissão para editar este pedido" });
         }
 
         // Não permitir edição de pedidos já atendidos
-        if (pedido.Status == "atendido")
+        if (pedido.Status == StatusPedidos.Atendido)
         {
             return BadRequest(new { message = "Não é possível editar um pedido já atendido" });
         }
@@ -245,13 +243,13 @@ public class PedidosAjudaController : ControllerBase
             return NotFound(new { message = "Pedido de ajuda não encontrado" });
         }
 
-        if (pedido.Status != "pendente")
+        if (pedido.Status != StatusPedidos.Pendente)
         {
             return BadRequest(new { message = "Este pedido já está sendo atendido ou foi concluído" });
         }
 
-        pedido.Status = "em_andamento";
-        pedido.AtendidoPorId = request.UsuarioId;
+        pedido.Status = StatusPedidos.EmAndamento;
+        pedido.AtendidoPorId = User.Id();
         pedido.CampanhaId = request.CampanhaId;
         pedido.DataAtualizacao = DateTime.UtcNow;
 
@@ -272,12 +270,13 @@ public class PedidosAjudaController : ControllerBase
         }
 
         // Verificar se quem está concluindo é o solicitante ou quem atendeu
-        if (pedido.UsuarioId != request.UsuarioId && pedido.AtendidoPorId != request.UsuarioId)
+        var usuarioId = User.Id();
+        if (pedido.UsuarioId != usuarioId && pedido.AtendidoPorId != usuarioId)
         {
-            return Unauthorized(new { message = "Você não tem permissão para concluir este pedido" });
+            return StatusCode(403, new { message = "Você não tem permissão para concluir este pedido" });
         }
 
-        pedido.Status = "atendido";
+        pedido.Status = StatusPedidos.Atendido;
         pedido.DataAtendimento = DateTime.UtcNow;
         pedido.DataAtualizacao = DateTime.UtcNow;
         pedido.Observacoes = string.IsNullOrEmpty(request.Observacoes) 
@@ -301,17 +300,17 @@ public class PedidosAjudaController : ControllerBase
         }
 
         // Apenas o solicitante pode cancelar
-        if (pedido.UsuarioId != request.UsuarioId)
+        if (pedido.UsuarioId != User.Id())
         {
-            return Unauthorized(new { message = "Você não tem permissão para cancelar este pedido" });
+            return StatusCode(403, new { message = "Você não tem permissão para cancelar este pedido" });
         }
 
-        if (pedido.Status == "atendido")
+        if (pedido.Status == StatusPedidos.Atendido)
         {
             return BadRequest(new { message = "Não é possível cancelar um pedido já atendido" });
         }
 
-        pedido.Status = "cancelado";
+        pedido.Status = StatusPedidos.Cancelado;
         pedido.DataAtualizacao = DateTime.UtcNow;
         pedido.Observacoes = string.IsNullOrEmpty(request.Motivo) 
             ? pedido.Observacoes 
@@ -324,6 +323,7 @@ public class PedidosAjudaController : ControllerBase
 
     // GET: api/pedidos-ajuda/estatisticas - Estatísticas gerais
     [HttpGet("estatisticas")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetEstatisticas()
     {
         var hoje = DateTime.UtcNow.Date;
@@ -332,12 +332,12 @@ public class PedidosAjudaController : ControllerBase
         var estatisticas = new
         {
             TotalPedidos = await _context.PedidosAjuda.CountAsync(),
-            Pendentes = await _context.PedidosAjuda.CountAsync(p => p.Status == "pendente"),
-            EmAndamento = await _context.PedidosAjuda.CountAsync(p => p.Status == "em_andamento"),
-            Atendidos = await _context.PedidosAjuda.CountAsync(p => p.Status == "atendido"),
-            AtendidosEsteMes = await _context.PedidosAjuda.CountAsync(p => p.Status == "atendido" && p.DataAtendimento >= inicioMes),
-            Criticos = await _context.PedidosAjuda.CountAsync(p => p.Urgencia == "critica" && p.Status == "pendente"),
-            PessoasAjudadas = await _context.PedidosAjuda.Where(p => p.Status == "atendido").SumAsync(p => p.QuantidadePessoas)
+            Pendentes = await _context.PedidosAjuda.CountAsync(p => p.Status == StatusPedidos.Pendente),
+            EmAndamento = await _context.PedidosAjuda.CountAsync(p => p.Status == StatusPedidos.EmAndamento),
+            Atendidos = await _context.PedidosAjuda.CountAsync(p => p.Status == StatusPedidos.Atendido),
+            AtendidosEsteMes = await _context.PedidosAjuda.CountAsync(p => p.Status == StatusPedidos.Atendido && p.DataAtendimento >= inicioMes),
+            Criticos = await _context.PedidosAjuda.CountAsync(p => p.Urgencia == UrgenciasPedido.Critica && p.Status == StatusPedidos.Pendente),
+            PessoasAjudadas = await _context.PedidosAjuda.Where(p => p.Status == StatusPedidos.Atendido).SumAsync(p => p.QuantidadePessoas)
         };
 
         return Ok(estatisticas);
@@ -347,6 +347,7 @@ public class PedidosAjudaController : ControllerBase
 // Request DTOs
 public class CreatePedidoAjudaRequest
 {
+    [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Informe o título")]
     public string Titulo { get; set; } = string.Empty;
     public string Descricao { get; set; } = string.Empty;
     public string Localizacao { get; set; } = string.Empty;
@@ -355,7 +356,6 @@ public class CreatePedidoAjudaRequest
     public string? TipoAjuda { get; set; }
     public string? Telefone { get; set; }
     public string? Observacoes { get; set; }
-    public int UsuarioId { get; set; }
     public int? RegiaoId { get; set; }
 }
 
@@ -369,24 +369,20 @@ public class UpdatePedidoAjudaRequest
     public string? TipoAjuda { get; set; }
     public string? Telefone { get; set; }
     public string? Observacoes { get; set; }
-    public int UsuarioId { get; set; }
     public int? RegiaoId { get; set; }
 }
 
 public class AtenderPedidoRequest
 {
-    public int UsuarioId { get; set; }
     public int? CampanhaId { get; set; }
 }
 
 public class ConcluirPedidoRequest
 {
-    public int UsuarioId { get; set; }
     public string? Observacoes { get; set; }
 }
 
 public class CancelarPedidoRequest
 {
-    public int UsuarioId { get; set; }
     public string? Motivo { get; set; }
 }

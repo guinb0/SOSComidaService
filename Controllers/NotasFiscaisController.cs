@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SOSComida.Data;
 using SOSComida.Models;
+using SOSComida.Seguranca;
 using SOSComida.Services;
 
 namespace SOSComida.Controllers;
@@ -19,9 +21,6 @@ namespace SOSComida.Controllers;
 [Route("api/campanhas/{campanhaId:int}/notas-fiscais")]
 public class NotasFiscaisController : ControllerBase
 {
-    private static readonly string[] TiposPermitidos =
-        { "image/jpeg", "image/jpg", "image/png", "image/webp" };
-
     private const long TamanhoMaximo = 10 * 1024 * 1024; // 10 MB
 
     private readonly ApplicationDbContext _context;
@@ -40,6 +39,7 @@ public class NotasFiscaisController : ControllerBase
 
     /// <summary>Lista as notas de uma campanha e o resumo da prestação de contas.</summary>
     [HttpGet]
+    [AllowAnonymous]
     public async Task<IActionResult> Listar(int campanhaId)
     {
         var campanha = await _context.Campanhas.FindAsync(campanhaId);
@@ -81,18 +81,14 @@ public class NotasFiscaisController : ControllerBase
     public async Task<IActionResult> Enviar(int campanhaId, [FromForm] EnviarNotaRequest form)
     {
         var imagem = form.Imagem;
-        var usuarioId = form.UsuarioId;
+        var usuarioId = User.Id();
         var descricao = form.Descricao;
 
         var campanha = await _context.Campanhas.FindAsync(campanhaId);
         if (campanha == null)
             return NotFound(new { message = "Campanha não encontrada" });
 
-        var usuario = await _context.Usuarios.FindAsync(usuarioId);
-        if (usuario == null)
-            return NotFound(new { message = "Usuário não encontrado" });
-
-        if (!PodeResponderPor(campanha, usuario))
+        if (!PermissoesCampanha.PodeResponderPor(campanha, User))
             return StatusCode(403, new
             {
                 message = "Só o responsável pela campanha pode enviar comprovantes de gasto"
@@ -101,32 +97,22 @@ public class NotasFiscaisController : ControllerBase
         if (imagem == null || imagem.Length == 0)
             return BadRequest(new { message = "Nenhuma imagem enviada" });
 
-        if (!TiposPermitidos.Contains(imagem.ContentType.ToLower()))
-            return BadRequest(new { message = "Tipo de arquivo não permitido. Use JPG, PNG ou WebP." });
-
         if (imagem.Length > TamanhoMaximo)
             return BadRequest(new { message = "A imagem deve ter no máximo 10MB" });
 
+        var extensao = await ImagemUpload.DetectarExtensaoAsync(imagem);
+        if (extensao is null or ".gif")
+            return BadRequest(new { message = "Tipo de arquivo não permitido. Use JPG, PNG ou WebP." });
+
         // Grava primeiro: a imagem é a prova de verdade, e ela precisa
         // sobreviver mesmo que o OCR falhe.
-        var pasta = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "notas");
-        Directory.CreateDirectory(pasta);
-
-        var extensao = Path.GetExtension(imagem.FileName);
-        if (string.IsNullOrWhiteSpace(extensao)) extensao = ".jpg";
-        var nomeArquivo = $"{campanhaId}_{Guid.NewGuid()}{extensao}";
-        var caminho = Path.Combine(pasta, nomeArquivo);
-
-        await using (var stream = new FileStream(caminho, FileMode.Create))
-        {
-            await imagem.CopyToAsync(stream);
-        }
+        var (url, caminho) = await ImagemUpload.SalvarAsync(imagem, extensao, "notas", campanhaId.ToString());
 
         var nota = new NotaFiscal
         {
             CampanhaId = campanhaId,
             EnviadoPorId = usuarioId,
-            ImagemUrl = $"/uploads/notas/{nomeArquivo}",
+            ImagemUrl = url,
             Descricao = descricao,
             DataEnvio = DateTime.UtcNow
         };
@@ -135,7 +121,7 @@ public class NotasFiscaisController : ControllerBase
         // responsável preenche à mão — melhor que perder o comprovante.
         try
         {
-            var resultado = await Task.Run(() => _ocr.Ler(caminho));
+            var resultado = await _ocr.LerAsync(caminho, HttpContext.RequestAborted);
             var campos = ExtratorNotaFiscal.Extrair(resultado.Texto);
 
             nota.TextoOcr = resultado.Texto;
@@ -182,8 +168,7 @@ public class NotasFiscaisController : ControllerBase
         if (nota == null)
             return NotFound(new { message = "Nota não encontrada" });
 
-        var usuario = await _context.Usuarios.FindAsync(request.UsuarioId);
-        if (usuario == null || !PodeResponderPor(nota.Campanha, usuario))
+        if (!PermissoesCampanha.PodeResponderPor(nota.Campanha, User))
             return StatusCode(403, new { message = "Sem permissão para revisar esta nota" });
 
         if (request.ValorTotal is <= 0)
@@ -204,7 +189,7 @@ public class NotasFiscaisController : ControllerBase
     }
 
     [HttpDelete("{notaId:int}")]
-    public async Task<IActionResult> Excluir(int campanhaId, int notaId, [FromQuery] int usuarioId)
+    public async Task<IActionResult> Excluir(int campanhaId, int notaId)
     {
         var nota = await _context.NotasFiscais
             .Include(n => n.Campanha)
@@ -213,32 +198,15 @@ public class NotasFiscaisController : ControllerBase
         if (nota == null)
             return NotFound(new { message = "Nota não encontrada" });
 
-        var usuario = await _context.Usuarios.FindAsync(usuarioId);
-        if (usuario == null || !PodeResponderPor(nota.Campanha, usuario))
+        if (!PermissoesCampanha.PodeResponderPor(nota.Campanha, User))
             return StatusCode(403, new { message = "Sem permissão para excluir esta nota" });
 
-        var caminho = Path.Combine(
-            Directory.GetCurrentDirectory(), "wwwroot", nota.ImagemUrl.TrimStart('/'));
-        if (System.IO.File.Exists(caminho))
-            System.IO.File.Delete(caminho);
+        ImagemUpload.Apagar(nota.ImagemUrl);
 
         _context.NotasFiscais.Remove(nota);
         await _context.SaveChangesAsync();
 
         return Ok(new { message = "Nota excluída" });
-    }
-
-    /// <summary>
-    /// Criador da campanha, instituição que aceitou a delegação, moderador ou
-    /// admin. Ninguém mais presta contas por uma campanha que não é sua.
-    /// </summary>
-    private static bool PodeResponderPor(Campanha campanha, Usuario usuario)
-    {
-        if (usuario.Tipo is "admin" or "moderador") return true;
-        if (campanha.UsuarioId == usuario.Id) return true;
-
-        return campanha.InstituicaoId == usuario.Id
-            && campanha.StatusDelegacao == "aceita";
     }
 
     private static object Projetar(NotaFiscal n) => new
@@ -274,13 +242,11 @@ public class NotasFiscaisController : ControllerBase
 public class EnviarNotaRequest
 {
     public IFormFile Imagem { get; set; } = null!;
-    public int UsuarioId { get; set; }
     public string? Descricao { get; set; }
 }
 
 public class RevisarNotaRequest
 {
-    public int UsuarioId { get; set; }
     public decimal? ValorTotal { get; set; }
     public string? NomeEmitente { get; set; }
     public string? CnpjEmitente { get; set; }

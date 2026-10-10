@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SOSComida.Data;
@@ -13,6 +14,7 @@ namespace SOSComida.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/prestacao-contas")]
+[AllowAnonymous]
 public class PrestacaoContasController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
