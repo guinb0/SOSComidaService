@@ -1,0 +1,12 @@
+bin/
+obj/
+node_modules/
+tests/
+TestResults/
+wwwroot/uploads/
+*.db
+*.db-shm
+*.db-wal
+Data/*.txt
+.vs/
+.git/

@@ -21,3 +21,14 @@ appsettings.*.Development.json
 .idea/
 *.user
 *.suo
+
+# Dependências de Node instaladas aqui por engano (o front é outro repositório).
+node_modules/
+package.json
+pnpm-lock.yaml
+
+# Dados antigos em texto, de antes do SQLite. Tinham senhas e CPFs.
+Data/*.txt
+
+# Resultados de teste
+TestResults/
